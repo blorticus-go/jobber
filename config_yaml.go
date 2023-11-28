@@ -36,7 +36,7 @@ func (c *ConfigurationYaml) validate() error {
 	if c.RunConfiguration != nil {
 		switch c.RunConfiguration.DefaultNamespace {
 		case "":
-		case "default":
+		case "jobber":
 		default:
 			switch {
 			case c.RunConfiguration.Namespaces == nil:

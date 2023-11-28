@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
-	"text/template"
+
+	"github.com/blorticus-go/jobber"
 )
 
 var template01 string = `---
@@ -14,30 +16,26 @@ type T struct {
 	Values map[string]any
 }
 
-func panicIfError(err error) {
+func dieIfError(err error, f string, a ...interface{}) {
 	if err != nil {
-		panic(err)
+		if f != "" {
+			fmt.Fprintf(os.Stderr, f+": ", a...)
+		}
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 	}
 }
 
-type CommandLineArguments struct {
-	ConfigurationFilePath string
-}
-
-func (args *CommandLineArguments) fillDefaults() *CommandLineArguments {
-	return args
-}
-
-func (args *CommandLineArguments) validate() error {
-	return nil
-}
-
 func main() {
-	tmpl, err := template.New("test").Parse(template01)
-	panicIfError(err)
+	logger := NewLogger()
 
-	t := T{Values: map[string]any{"Kind": 10}}
+	clargs := ParseCommandLineArguments()
 
-	err = tmpl.Execute(os.Stdout, t)
-	panicIfError(err)
+	configFile, err := os.Open(clargs.ConfigurationFilePath)
+	logger.DieIfError(err, "failed to open file (%s) for reading", clargs.ConfigurationFilePath)
+
+	_, err = jobber.ReadConfigurationFrom(configFile)
+	logger.DieIfError(err, "failed to process configuration in file (%s)", clargs.ConfigurationFilePath)
+
+	_, err = clargs.NewKubeConnector()
+	logger.DieIfError(err, "failed to process kubeconfig")
 }
