@@ -21,22 +21,13 @@ func ParseCommandLineArguments() *CommandLineArguments {
 	return clargs
 }
 
-func (clargs *CommandLineArguments) NewKubeConnector() (*KubeConnector, error) {
-	kubeconfigPath, err := clargs.resolveKubeconfigPath(clargs)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewKubeConnectorFromKubeconfigFile(kubeconfigPath)
-}
-
-func (clargs *CommandLineArguments) resolveKubeconfigPath(cliArgs *CommandLineArguments) (string, error) {
-	if cliArgs.KubeconfigPath == "" {
+func (clargs *CommandLineArguments) ResolveKubeconfigPath() (string, error) {
+	if clargs.KubeconfigPath == "" {
 		if kubeconfigPathFromEnv := os.Getenv("KUBECONFIG"); kubeconfigPathFromEnv != "" {
 			return kubeconfigPathFromEnv, nil
 		}
 		return "", fmt.Errorf("KUBECONFIG is not set and no kubeconfig path provided on command-line")
 	}
 
-	return cliArgs.KubeconfigPath, nil
+	return clargs.KubeconfigPath, nil
 }

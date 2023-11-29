@@ -27,10 +27,10 @@ func (l *Logger) Fatalf(formatString string, a ...any) {
 	l.fatalFinalEvent()
 }
 
-func (l *Logger) DieIfError(err error, formatString string, a ...any) {
+func (l *Logger) DieIfError(err error, formatStringThenSprintfArgs ...any) {
 	if err != nil {
-		if formatString != "" {
-			fmt.Fprintf(l.fatalMessageDestination, formatString+": ", a...)
+		if len(formatStringThenSprintfArgs) != 0 {
+			fmt.Fprintf(l.fatalMessageDestination, formatStringThenSprintfArgs[0].(string)+": ", formatStringThenSprintfArgs[1:]...)
 		}
 		fmt.Printf("%s\n", err.Error())
 		l.fatalFinalEvent()
