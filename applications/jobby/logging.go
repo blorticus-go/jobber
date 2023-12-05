@@ -52,12 +52,12 @@ func (l *Logger) Say(formatString string, a ...any) {
 	fmt.Fprintf(l.normalMessageDestination, formatString+"\n", a...)
 }
 
-func (l *Logger) SayContextually(context *jobber.EventContext, formatString string, a ...any) {
+func (l *Logger) SayContextually(context jobber.EventContext, formatString string, a ...any) {
 	f := fmt.Sprintf("%s %s", l.possiblyFixedWidthContextString(context), formatString)
 	l.Say(f, a...)
 }
 
-func (l *Logger) possiblyFixedWidthContextString(context *jobber.EventContext) string {
+func (l *Logger) possiblyFixedWidthContextString(context jobber.EventContext) string {
 	if context.CaseName == "" {
 		r := fmt.Sprintf("[%s]", context.UnitName)
 		return fmt.Sprintf(l.contextFieldWidthPrintfSpecifier, r)
@@ -70,31 +70,31 @@ func (l *Logger) possiblyFixedWidthContextString(context *jobber.EventContext) s
 func (l *Logger) LogEventMessage(event *jobber.Event) {
 	switch event.Type {
 	case jobber.ResourceCreationSuccess:
-		l.SayContextually(&event.Context, "Resource (%s) created successfully", justTheTargetFrom(event.PipelinePathId))
-	case jobber.ResourceCreatingFailure:
-		l.SayContextually(&event.Context, "Resource (%s) creation failed: %s", justTheTargetFrom(event.PipelinePathId), event.ResourceInformation.Error)
+		l.SayContextually(event.Context, "Resource (%s) created successfully", justTheTargetFrom(event.PipelinePathId))
+	case jobber.ResourceCreationFailure:
+		l.SayContextually(event.Context, "Resource (%s) creation failed: %s", justTheTargetFrom(event.PipelinePathId), event.ResourceInformation.Error)
 	case jobber.ResourceDeletionSuccess:
-		l.SayContextually(&event.Context, "Resource (%s) deleted successfully", justTheTargetFrom(event.PipelinePathId))
+		l.SayContextually(event.Context, "Resource (%s) deleted successfully", justTheTargetFrom(event.PipelinePathId))
 	case jobber.ResourceDeletionFailure:
-		l.SayContextually(&event.Context, "Resource (%s) deletion failed: %s", justTheTargetFrom(event.PipelinePathId), event.ResourceInformation.Error)
+		l.SayContextually(event.Context, "Resource (%s) deletion failed: %s", justTheTargetFrom(event.PipelinePathId), event.ResourceInformation.Error)
 	case jobber.ValuesTransformSuccess:
-		l.SayContextually(&event.Context, "ValueTransform (%s) completed successfully", justTheTargetFrom(event.PipelinePathId))
+		l.SayContextually(event.Context, "ValueTransform (%s) completed successfully", justTheTargetFrom(event.PipelinePathId))
 	case jobber.ValuesTransformFailure:
-		l.SayContextually(&event.Context, "ValueTransform (%s) failed: %s", justTheTargetFrom(event.PipelinePathId), event.ValuesTransformInformation.Error)
+		l.SayContextually(event.Context, "ValueTransform (%s) failed: %s", justTheTargetFrom(event.PipelinePathId), event.ValuesTransformInformation.Error)
 	case jobber.ExecutableRunSuccess:
-		l.SayContextually(&event.Context, "Executable (%s) ran successfully", justTheTargetFrom(event.PipelinePathId))
+		l.SayContextually(event.Context, "Executable (%s) ran successfully", justTheTargetFrom(event.PipelinePathId))
 	case jobber.ExecutableRunFailure:
-		l.SayContextually(&event.Context, "Executable (%s) run failed: %s", justTheTargetFrom(event.PipelinePathId), event.ExecuableInformation.Error)
+		l.SayContextually(event.Context, "Executable (%s) run failed: %s", justTheTargetFrom(event.PipelinePathId), event.ExecuableInformation.Error)
 	case jobber.TestUnitStarted:
-		l.SayContextually(&event.Context, "Unit started")
+		l.SayContextually(event.Context, "Unit started")
 	case jobber.TestUnitCompletedSuccessfully:
-		l.SayContextually(&event.Context, "Unit completed succesfully")
+		l.SayContextually(event.Context, "Unit completed succesfully")
 	case jobber.TestCaseStarted:
-		l.SayContextually(&event.Context, "Test case started")
+		l.SayContextually(event.Context, "Test case started")
 	case jobber.TestCaseCompletedSuccessfully:
-		l.SayContextually(&event.Context, "Test case completed succesfully")
+		l.SayContextually(event.Context, "Test case completed succesfully")
 	case jobber.TestingCompletedSuccesfully:
-		l.SayContextually(&event.Context, "Testing completed successfully")
+		l.SayContextually(event.Context, "Testing completed successfully")
 	}
 }
 
