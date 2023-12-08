@@ -3,62 +3,132 @@ package jobber
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-type RunConfigurationNamespacesYaml struct {
-	ReferenceName string `yaml:"ReferenceName"`
-	BaseName      string `yaml:"BaseName"`
+type ConfigurationNamespace struct {
+	Basename string `yaml:"Basename"`
 }
 
-type RunConfigurationYaml struct {
-	Namespaces       []*RunConfigurationNamespacesYaml `yaml:"Namespaces"`
-	DefaultNamespace string                            `yaml:"DefaultNamespace"`
-	Pipeline         []string                          `yaml:"Pipeline"`
+type ConfigurationDefinition struct {
+	Namespaces map[string]*ConfigurationNamespace `yaml:"Namespaces"`
+	Pipeline   []string                           `yaml:"Pipeline"`
 }
 
-func (c *RunConfigurationYaml) namespacesDoNotHaveNamespaceNamed(name string) bool {
-	for _, ns := range c.Namespaces {
-		if ns.ReferenceName == name {
-			return false
-		}
+type TestCase struct {
+	Name   string         `yaml:"Name"`
+	Values map[string]any `yaml:"Values"`
+}
+
+type TestUnit struct {
+	Name   string         `yaml:"Name"`
+	Values map[string]any `yaml:"Value"`
+}
+
+type ConfigurationTest struct {
+	Definition *ConfigurationDefinition `yaml:"Definition"`
+	Cases      []*TestCase              `yaml:"Cases"`
+	Units      []*TestUnit              `yaml:"Units"`
+}
+
+type Configuration struct {
+	Test *ConfigurationTest `yaml:"Test"`
+}
+
+func (c *Configuration) validate() error {
+	if c.Test == nil {
+		return fmt.Errorf(".Test must exist")
 	}
 
-	return true
-}
+	if c.Test.Cases == nil {
+		return fmt.Errorf(".Test.Cases must exist and cannot be an empty list")
+	}
 
-type ConfigurationYaml struct {
-	RunConfiguration *RunConfigurationYaml `yaml:"RunConfiguration"`
-}
+	if c.Test.Units == nil {
+		return fmt.Errorf(".Test.Units must exist and cannot be an empty list")
+	}
 
-func (c *ConfigurationYaml) validate() error {
-	if c.RunConfiguration != nil {
-		switch c.RunConfiguration.DefaultNamespace {
-		case "":
-		case "jobber":
+	if c.Test.Definition == nil {
+		return fmt.Errorf(".Test.Definition must exist")
+	}
+
+	if c.Test.Definition.Namespaces == nil {
+		return fmt.Errorf(".Test.Definition.Namepsaces must define at least the 'Default' namespace")
+	}
+
+	if _, keyIsInMap := c.Test.Definition.Namespaces["Default"]; !keyIsInMap {
+		return fmt.Errorf(".Test.Definition.Namepsaces must define at least the 'Default' namespace")
+	}
+
+	if c.Test.Definition.Pipeline == nil {
+		return fmt.Errorf(".Test.Definition.Pipeline must exist and must not be an empty list")
+	}
+
+	for pipelineEntryIndex, value := range c.Test.Definition.Pipeline {
+		s := strings.Split(value, "/")
+		if len(s) != 2 {
+			return fmt.Errorf(".Test.Definition.Pipeline.[%d] must be of format <type>/<target>", pipelineEntryIndex)
+		}
+		switch s[0] {
+		case "resources":
+		case "values-transforms":
+		case "executables":
 		default:
-			switch {
-			case c.RunConfiguration.Namespaces == nil:
-				return fmt.Errorf("a DefaultNamespace (%s) was provided but there is no matching Namespaces definition", c.RunConfiguration.DefaultNamespace)
-			case c.RunConfiguration.namespacesDoNotHaveNamespaceNamed(c.RunConfiguration.DefaultNamespace):
-				return fmt.Errorf("the default namespace (%s) is not defined as a Namespace", c.RunConfiguration.DefaultNamespace)
-			}
+			return fmt.Errorf(".Test.Definition.Pipeline.[%d] type indicator [%s] is not understood", pipelineEntryIndex, s[0])
 		}
 	}
 
 	return nil
 }
 
-func ReadConfigurationFrom(r io.Reader) (*ConfigurationYaml, error) {
-	c := &ConfigurationYaml{}
+func ReadConfigurationYamlFromReader(r io.Reader) (*Configuration, error) {
+	c := &Configuration{}
 
 	encoder := yaml.NewDecoder(r)
 	err := encoder.Decode(c)
+
+	if err != nil {
+		return nil, err
+	}
 
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
 
 	return c, err
+}
+
+func ReadConfigurationYamlFromFile(filePath string) (*Configuration, error) {
+	yamlFile, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file (%s): %s", filePath, err.Error())
+	}
+	defer yamlFile.Close()
+
+	return ReadConfigurationYamlFromReader(yamlFile)
+}
+
+func (c *Configuration) CharactersInLongestCaseName() uint {
+	longest := 0
+	for _, c := range c.Test.Cases {
+		if len(c.Name) > longest {
+			longest = len(c.Name)
+		}
+	}
+
+	return uint(longest)
+}
+
+func (c *Configuration) CharactersInLongestUnitName() uint {
+	longest := 0
+	for _, c := range c.Test.Units {
+		if len(c.Name) > longest {
+			longest = len(c.Name)
+		}
+	}
+
+	return uint(longest)
 }
