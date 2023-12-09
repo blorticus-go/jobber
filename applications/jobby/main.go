@@ -37,7 +37,7 @@ func main() {
 		event := <-eventChannel
 		logger.LogEventMessage(event)
 
-		if event.Type == jobber.TestingCompletedSuccesfully || event.ForcedTestToAbortOnError {
+		if event.Type == jobber.TestingCompletedSuccesfully || event.Error != nil {
 			break
 		}
 	}

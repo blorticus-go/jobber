@@ -70,21 +70,21 @@ func (l *Logger) possiblyFixedWidthContextString(context jobber.EventContext) st
 func (l *Logger) LogEventMessage(event *jobber.Event) {
 	switch event.Type {
 	case jobber.ResourceCreationSuccess:
-		l.SayContextually(event.Context, "Resource (%s) created successfully", justTheTargetFrom(event.PipelinePathId))
+		l.SayContextually(event.Context, "Successfully created resource kind [%s] named [%s]", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name)
 	case jobber.ResourceCreationFailure:
-		l.SayContextually(event.Context, "Resource (%s) creation failed: %s", justTheTargetFrom(event.PipelinePathId), event.ResourceInformation.Error)
+		l.SayContextually(event.Context, "Failed to create resource kind [%s] named [%s]: %s", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name, event.Error)
 	case jobber.ResourceDeletionSuccess:
-		l.SayContextually(event.Context, "Resource (%s) deleted successfully", justTheTargetFrom(event.PipelinePathId))
+		l.SayContextually(event.Context, "Successfully deleted resource kind [%s] named [%s]", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name)
 	case jobber.ResourceDeletionFailure:
-		l.SayContextually(event.Context, "Resource (%s) deletion failed: %s", justTheTargetFrom(event.PipelinePathId), event.ResourceInformation.Error)
+		l.SayContextually(event.Context, "Failed to delete resource kind [%s] named [%s]: %s", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name, event.Error)
 	case jobber.ValuesTransformSuccess:
-		l.SayContextually(event.Context, "ValueTransform (%s) completed successfully", justTheTargetFrom(event.PipelinePathId))
+		l.SayContextually(event.Context, "ValueTransform [%s] completed successfully", event.ValuesTransformInformation.TransformerName)
 	case jobber.ValuesTransformFailure:
-		l.SayContextually(event.Context, "ValueTransform (%s) failed: %s", justTheTargetFrom(event.PipelinePathId), event.ValuesTransformInformation.Error)
+		l.SayContextually(event.Context, "ValueTransform [%s] failed: %s", event.ValuesTransformInformation.TransformerName, event.Error)
 	case jobber.ExecutableRunSuccess:
-		l.SayContextually(event.Context, "Executable (%s) ran successfully", justTheTargetFrom(event.PipelinePathId))
+		l.SayContextually(event.Context, "Executable [%s] ran successfully", event.ExecuableInformation.ExecutableName)
 	case jobber.ExecutableRunFailure:
-		l.SayContextually(event.Context, "Executable (%s) run failed: %s", justTheTargetFrom(event.PipelinePathId), event.ExecuableInformation.Error)
+		l.SayContextually(event.Context, "Executable [%s] run failed: %s", event.ExecuableInformation.ExecutableName, event.Error)
 	case jobber.TestUnitStarted:
 		l.SayContextually(event.Context, "Unit started")
 	case jobber.TestUnitCompletedSuccessfully:
