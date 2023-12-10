@@ -33,6 +33,7 @@ Test:
     Namespaces:
       Default:
         Basename: perftest
+    PipelineRootDirectory: /home/vwells/pipeline
     Pipeline:
     - resources/nginx-producer.yaml
     - resources/telemetry.yaml

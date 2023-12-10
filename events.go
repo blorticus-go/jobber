@@ -1,5 +1,11 @@
 package jobber
 
+import (
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
 type StringRetriever func() string
 
 type K8sResourceInformation struct {
@@ -13,7 +19,7 @@ type EventContext struct {
 	UnitName string
 }
 
-func NewEventContext(testUnit *TestUnit, testCase *TestCase) EventContext {
+func EventContextFor(testUnit *TestUnit, testCase *TestCase) EventContext {
 	if testUnit == nil {
 		return EventContext{}
 	}
@@ -57,33 +63,29 @@ type ResourceEvent struct {
 	// ResourceInformation describes the Kubernetes Resource to which the event pertains.
 	// If there was an error and the template didn't provide enough information to determine
 	// all of the information for the Resource, this value will be nil.
-	ResourceInformation *K8sResourceInformation
-
-	// Error will be non-nil if the event is ResourceCreatingFailure or ResourceDeletionFailure.
-	Error error
+	ResourceDetails *K8sResourceInformation
 }
 
 type ValuesTransformEvent struct {
+	TransformerName       string
 	InputValuesRetriever  StringRetriever
 	OutputValuesRetriever StringRetriever
 	StderrOutputRetriever StringRetriever
-	Error                 error
 }
 
 type ExecutableEvent struct {
+	ExecutableName        string
 	StdoutOutputRetriever StringRetriever
 	StderrOutputRetriever StringRetriever
-	Error                 error
 }
 
 type Event struct {
 	Type                       EventType
-	PipelinePathId             string
 	Context                    EventContext
 	ResourceInformation        *ResourceEvent
 	ValuesTransformInformation *ValuesTransformEvent
 	ExecuableInformation       *ExecutableEvent
-	ForcedTestToAbortOnError   bool
+	Error                      error
 }
 
 type eventHandler struct {
@@ -134,28 +136,82 @@ func (h *eventHandler) sayThatTestingCompletedSuccessfully() {
 	}
 }
 
-func (h *eventHandler) sayThatResourceCreationFailed(resourceInformation *K8sResourceInformation, pipelinePathId string, templateRetrieverMethod StringRetriever, err error, testUnit *TestUnit, testCase *TestCase) {
-	h.eventChannel <- &Event{
-		Type: ResourceCreationFailure,
-		ResourceInformation: &ResourceEvent{
-			ExpandedTemplateRetriever: templateRetrieverMethod,
-			ResourceInformation:       resourceInformation,
-			Error:                     err,
-		},
-		Context:                  NewEventContext(testUnit, testCase),
-		PipelinePathId:           pipelinePathId,
-		ForcedTestToAbortOnError: true,
-	}
-}
-
-func (h *eventHandler) sayThatResourceCreationSucceeded(resourceInformation *K8sResourceInformation, pipelinePathId string, templateRetrieverMethod StringRetriever, testUnit *TestUnit, testCase *TestCase) {
+func (h *eventHandler) sayThatResourceCreationSucceeded(resourceInformation *K8sResourceInformation, templateRetrieverMethod StringRetriever, testUnit *TestUnit, testCase *TestCase) {
 	h.eventChannel <- &Event{
 		Type: ResourceCreationSuccess,
 		ResourceInformation: &ResourceEvent{
 			ExpandedTemplateRetriever: templateRetrieverMethod,
-			ResourceInformation:       resourceInformation,
+			ResourceDetails:           resourceInformation,
 		},
-		Context:        NewEventContext(testUnit, testCase),
-		PipelinePathId: pipelinePathId,
+		Context: EventContextFor(testUnit, testCase),
+	}
+}
+
+func (h *eventHandler) sayThatResourceCreationFailed(resourceInformation *K8sResourceInformation, templateRetrieverMethod StringRetriever, err error, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type: ResourceCreationFailure,
+		ResourceInformation: &ResourceEvent{
+			ExpandedTemplateRetriever: templateRetrieverMethod,
+			ResourceDetails:           resourceInformation,
+		},
+		Context: EventContextFor(testUnit, testCase),
+		Error:   err,
+	}
+}
+
+func (h *eventHandler) sayThatResourceDeletionSucceeded(resourceInformation *K8sResourceInformation, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type: ResourceDeletionSuccess,
+		ResourceInformation: &ResourceEvent{
+			ResourceDetails: resourceInformation,
+		},
+		Context: EventContextFor(testUnit, testCase),
+	}
+}
+
+func (h *eventHandler) sayThatResourceDeletionFailed(resourceInformation *K8sResourceInformation, err error, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type: ResourceDeletionFailure,
+		ResourceInformation: &ResourceEvent{
+			ResourceDetails: resourceInformation,
+		},
+		Context: EventContextFor(testUnit, testCase),
+		Error:   err,
+	}
+}
+
+func (h *eventHandler) explainAttemptToCreateDefaultNamespace(generatedNameBase string, createdNamespaceApiObject *corev1.Namespace, context EventContext, errorOnCreationAttempt error) {
+	var namespaceName string
+	if createdNamespaceApiObject != nil {
+		namespaceName = createdNamespaceApiObject.Name
+	} else {
+		namespaceName = fmt.Sprintf("%s-<generated>", generatedNameBase)
+	}
+
+	if errorOnCreationAttempt != nil {
+		h.eventChannel <- &Event{
+			Type:    ResourceCreationFailure,
+			Context: context,
+			ResourceInformation: &ResourceEvent{
+				ResourceDetails: &K8sResourceInformation{
+					Kind:          "namespace",
+					Name:          namespaceName,
+					NamespaceName: "",
+				},
+			},
+			Error: errorOnCreationAttempt,
+		}
+	} else {
+		h.eventChannel <- &Event{
+			Type:    ResourceCreationSuccess,
+			Context: context,
+			ResourceInformation: &ResourceEvent{
+				ResourceDetails: &K8sResourceInformation{
+					Kind:          "namespace",
+					Name:          namespaceName,
+					NamespaceName: "",
+				},
+			},
+		}
 	}
 }

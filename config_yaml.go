@@ -14,8 +14,9 @@ type ConfigurationNamespace struct {
 }
 
 type ConfigurationDefinition struct {
-	Namespaces map[string]*ConfigurationNamespace `yaml:"Namespaces"`
-	Pipeline   []string                           `yaml:"Pipeline"`
+	Namespaces            map[string]*ConfigurationNamespace `yaml:"Namespaces"`
+	PipelineRootDirectory string                             `yaml:"PipelineRootDirectory"`
+	Pipeline              []string                           `yaml:"Pipeline"`
 }
 
 type TestCase struct {
@@ -65,6 +66,10 @@ func (c *Configuration) validate() error {
 
 	if c.Test.Definition.Pipeline == nil {
 		return fmt.Errorf(".Test.Definition.Pipeline must exist and must not be an empty list")
+	}
+
+	if c.Test.Definition.PipelineRootDirectory == "" {
+		return fmt.Errorf(".Test.Definition.PipelineRootDirectory must exist and my not be empty")
 	}
 
 	for pipelineEntryIndex, value := range c.Test.Definition.Pipeline {

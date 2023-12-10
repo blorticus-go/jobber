@@ -1,10 +1,10 @@
 package jobber
 
 import (
-	"fmt"
+	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes/scheme"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type TemplateExpansionNamespace struct {
@@ -30,49 +30,35 @@ type Runner struct {
 	config               *Configuration
 	TemplateExpansions   *TemplateExpansionVariables
 	defaultNamespaceName string
+	resourceTracker      *CreatedResourceTracker
 }
 
 func NewRunner(config *Configuration, client *Client) *Runner {
 	return &Runner{
-		client: client,
-		config: config,
+		client:          client,
+		config:          config,
+		resourceTracker: NewCreatedResourceTracker(),
 	}
 }
 
-func (runner *Runner) CreateNamespaceFromYamlString(yamlString string) error {
-	decode := scheme.Codecs.UniversalDeserializer().Decode
-	obj, gkv, err := decode([]byte(yamlString), nil, nil)
-
-	if err != nil {
-		return err
-	}
-
-	if gkv.Kind == "Namespace" {
-		ns := obj.(*corev1.Namespace)
-		fmt.Printf("Namespace name = %s\n", ns.Name)
-	}
-
-	return nil
-}
-
-func (runner *Runner) defaultNamespaceResourceInformation(namespaceApiObject *corev1.Namespace) *K8sResourceInformation {
-	var name string
-	if namespaceApiObject != nil {
-		name = namespaceApiObject.Name
-	} else {
-		name = runner.config.Test.Definition.Namespaces["Default"].Basename
-	}
-
-	return &K8sResourceInformation{
-		Kind:          "namespace",
-		Name:          name,
-		NamespaceName: "",
-	}
-}
-
-func (runner *Runner) createDefaultNamespace() (*Event, error) {
+func (runner *Runner) createDefaultNamespace() (*corev1.Namespace, error) {
 	defaultNamespaceApiObject, err := runner.client.CreateNamespaceUsingGeneratedName(runner.config.Test.Definition.Namespaces["Default"].Basename)
+	if err != nil {
+		return nil, err
+	}
 
+	runner.resourceTracker.AddCreatedResource(&K8sResource{
+		information: &K8sResourceInformation{
+			Kind:          "namespace",
+			Name:          defaultNamespaceApiObject.Name,
+			NamespaceName: "",
+		},
+		deletionMethod: func(object any) error {
+			return runner.client.clientSet.CoreV1().Namespaces().Delete(context.Background(), defaultNamespaceApiObject.Name, metav1.DeleteOptions{})
+		},
+	})
+
+	return defaultNamespaceApiObject, nil
 }
 
 func (runner *Runner) RunTest(eventChannel chan<- *Event) {
@@ -81,24 +67,23 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	for _, testUnit := range runner.config.Test.Units {
 		eventHandler.sayThatUnitStarted(testUnit)
 
-		if err != nil {
-			eventChannel <- &Event{
-				Type:           ResourceCreationFailure,
-				PipelinePathId: "resources/generated/namespace/Default",
-				Context:        NewEventContext(testUnit, nil),
-				ResourceInformation: &ResourceEvent{
-					ExpandedTemplateRetriever: nil,
-					ResourceInformation:       runner.defaultNamespaceResourceInformation(defaultNamespaceApiObject),
-					Error:                     err,
-				},
-			}
-			return
-		} else {
-			eventHandler.sayThatResourceCreationSucceeded(runner.defaultNamespaceResourceInformation(defaultNamespaceApiObject), "resources/builtin/namespace/Default", nil, testUnit, nil)
-		}
-
 		for _, testCase := range runner.config.Test.Cases {
 			eventHandler.sayThatCaseStarted(testUnit, testCase)
+
+			nsObject, err := runner.createDefaultNamespace()
+			eventHandler.explainAttemptToCreateDefaultNamespace(runner.config.Test.Definition.Namespaces["Default"].Basename, nsObject, EventContextFor(testUnit, testCase), err)
+			if err != nil {
+				return
+			}
+
+			for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
+				if attemptDetails.Error != nil {
+					eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
+					return
+				}
+
+				eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
+			}
 
 			eventHandler.sayThatCaseCompletedSuccessfully(testUnit, testCase)
 		}
