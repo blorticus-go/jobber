@@ -3,6 +3,7 @@ package jobber
 import (
 	"context"
 
+	"github.com/qdm12/reprint"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -15,7 +16,7 @@ type TemplateExpansionConfigVariables struct {
 	Namespaces map[string]*TemplateExpansionNamespace
 }
 
-type TemplateExpansionVariables struct {
+type PipelineVariables struct {
 	Values map[string]any
 	Config *TemplateExpansionConfigVariables
 }
@@ -28,7 +29,6 @@ type RunningContext struct {
 type Runner struct {
 	client               *Client
 	config               *Configuration
-	TemplateExpansions   *TemplateExpansionVariables
 	defaultNamespaceName string
 	resourceTracker      *CreatedResourceTracker
 }
@@ -63,17 +63,67 @@ func (runner *Runner) createDefaultNamespace() (*corev1.Namespace, error) {
 
 func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	eventHandler := &eventHandler{eventChannel}
+	assetsDirectoryManager := NewContextualAssetsDirectoryManager()
+
+	if err := assetsDirectoryManager.CreateTestAssetsRootDirectory(); err != nil {
+		eventHandler.sayThatAssetDirectoryCreationFailed(assetsDirectoryManager.TestRootAssetDirectoryPath(), err, nil, nil)
+		return
+	} else {
+		eventHandler.sayThatAssetDirectoryCreationSucceeded(assetsDirectoryManager.TestRootAssetDirectoryPath(), nil, nil)
+	}
+
+	testCasePipeline, err := NewPipelineFromStringDescriptors(runner.config.Test.Definition.Pipeline, runner.config.Test.Definition.PipelineRootDirectory)
+	if err != nil {
+		eventHandler.sayThatPipelineDefinitionIsInvalid(err)
+		return
+	}
 
 	for _, testUnit := range runner.config.Test.Units {
 		eventHandler.sayThatUnitStarted(testUnit)
 
+		if err := assetsDirectoryManager.CreateTestUnitDirectory(testUnit); err != nil {
+			eventHandler.sayThatAssetDirectoryCreationFailed(assetsDirectoryManager.TestRootAssetDirectoryPath(), err, testUnit, nil)
+			return
+		} else {
+			eventHandler.sayThatAssetDirectoryCreationSucceeded(assetsDirectoryManager.TestUnitAssetDirectoryPathFor(testUnit), testUnit, nil)
+		}
+
 		for _, testCase := range runner.config.Test.Cases {
 			eventHandler.sayThatCaseStarted(testUnit, testCase)
+
+			outcome := assetsDirectoryManager.CreateTestCaseDirectories(testUnit, testCase)
+			for _, successfullyCreatedDir := range outcome.SuccessfullyCreatedDirectoryPaths {
+				eventHandler.sayThatAssetDirectoryCreationSucceeded(successfullyCreatedDir, testUnit, testCase)
+			}
+			if outcome.DirectoryCreationFailureError != nil {
+				eventHandler.sayThatAssetDirectoryCreationFailed(outcome.DirectoryPathOfFailedCreation, outcome.DirectoryCreationFailureError, testUnit, testCase)
+				return
+			}
 
 			nsObject, err := runner.createDefaultNamespace()
 			eventHandler.explainAttemptToCreateDefaultNamespace(runner.config.Test.Definition.Namespaces["Default"].Basename, nsObject, EventContextFor(testUnit, testCase), err)
 			if err != nil {
 				return
+			}
+
+			testCaseScopedCopyOfVariables := &PipelineVariables{
+				Values: reprint.This(testCase.Values).(map[string]any),
+				Config: &TemplateExpansionConfigVariables{
+					Namespaces: map[string]*TemplateExpansionNamespace{
+						"Default": {
+							GeneratedName: nsObject.Name,
+						},
+					},
+				},
+			}
+
+			for action := testCasePipeline.Restart(); action != nil; action = testCasePipeline.NextAction() {
+				for _, outcome := range action.Run(testCaseScopedCopyOfVariables, runner.client) {
+					if eventHandler.explainActionOutcome(action, outcome, testUnit, testCase); outcome.Error != nil {
+						return
+					}
+				}
+
 			}
 
 			for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
@@ -92,95 +142,4 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	}
 
 	eventHandler.sayThatTestingCompletedSuccessfully()
-}
-
-func (runner *Runner) CreateResourceFromYaml(yamlAsString string) error {
-	// client, err := dynamic.NewForConfig(runner.client.RestConfig)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// res := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-
-	// desired := &unstructured.Unstructured{
-	// 	Object: map[string]interface{}{
-	// 		"apiVersion": "v1",
-	// 		"kind":       "namespace",
-	// 		"metadata": map[string]interface{}{
-	// 			"generateName": runner.config.Test.Definition.Namespaces["Default"].Basename,
-	// 		},
-	// 	},
-	// }
-
-	// created, err := client.
-	// 	Resource(res).
-	// 	Namespace(namespace).
-	// 	Create(context.Background(), desired, metav1.CreateOptions{})
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
-
-	// fmt.Printf("Created ConfigMap %s/%s\n", namespace, created.GetName())
-
-	// data, _, _ := unstructured.NestedStringMap(created.Object, "data")
-	// if !reflect.DeepEqual(map[string]string{"foo": "bar"}, data) {
-	// 	panic("Created ConfigMap has unexpected data")
-	// }
-
-	// // Read
-	// read, err := client.
-	// 	Resource(res).
-	// 	Namespace(namespace).
-	// 	Get(
-	// 		context.Background(),
-	// 		created.GetName(),
-	// 		metav1.GetOptions{},
-	// 	)
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
-
-	// fmt.Printf("Read ConfigMap %s/%s\n", namespace, read.GetName())
-
-	// data, _, _ = unstructured.NestedStringMap(read.Object, "data")
-	// if !reflect.DeepEqual(map[string]string{"foo": "bar"}, data) {
-	// 	panic("Read ConfigMap has unexpected data")
-	// }
-
-	// // Update
-	// unstructured.SetNestedField(read.Object, "qux", "data", "foo")
-	// updated, err := client.
-	// 	Resource(res).
-	// 	Namespace(namespace).
-	// 	Update(
-	// 		context.Background(),
-	// 		read,
-	// 		metav1.UpdateOptions{},
-	// 	)
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
-
-	// fmt.Printf("Updated ConfigMap %s/%s\n", namespace, updated.GetName())
-
-	// data, _, _ = unstructured.NestedStringMap(updated.Object, "data")
-	// if !reflect.DeepEqual(map[string]string{"foo": "qux"}, data) {
-	// 	panic("Updated ConfigMap has unexpected data")
-	// }
-
-	// // Delete
-	// err = client.
-	// 	Resource(res).
-	// 	Namespace(namespace).
-	// 	Delete(
-	// 		context.Background(),
-	// 		created.GetName(),
-	// 		metav1.DeleteOptions{},
-	// 	)
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
-	// fmt.Printf("Deleted ConfigMap %s/%s\n", namespace, created.GetName())
-
-	return nil
 }

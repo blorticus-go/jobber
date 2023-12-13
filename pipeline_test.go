@@ -115,11 +115,14 @@ func TestPipeline(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		pipeline.Reset()
-
 		actions := make([]*jobber.PipelineAction, len(descriptors))
 
-		for i := 0; i < len(descriptors); i++ {
+		actions[0] = pipeline.Restart()
+		if actions[0] == nil {
+			t.Fatalf("pipeline with %d actions returned nil on Restart()", len(descriptors))
+		}
+
+		for i := 1; i < len(descriptors); i++ {
 			n := pipeline.NextAction()
 			if n == nil {
 				t.Fatalf("pipeline with %d actions returned nil on NextAction() after %d calls", len(descriptors), i+1)

@@ -2,6 +2,7 @@ package jobber
 
 import (
 	"fmt"
+	"io"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -41,6 +42,7 @@ type EventType int
 const (
 	ResourceCreationSuccess EventType = iota
 	ResourceCreationFailure
+	ResourceTemplateExpansionFailure
 	ResourceDeletionSuccess
 	ResourceDeletionFailure
 	ValuesTransformSuccess
@@ -52,6 +54,9 @@ const (
 	TestCaseStarted
 	TestCaseCompletedSuccessfully
 	TestingCompletedSuccesfully
+	PipelineDefinitionIsInvalid
+	AssetDirectoryCreatedSuccessfully
+	AssetDirectoryCreationFailed
 )
 
 type ResourceEvent struct {
@@ -64,6 +69,9 @@ type ResourceEvent struct {
 	// If there was an error and the template didn't provide enough information to determine
 	// all of the information for the Resource, this value will be nil.
 	ResourceDetails *K8sResourceInformation
+
+	// The pipeline action identifier for the template.  This is set only when the event type is ResourceTemplateExpansionFailure.
+	TemplateName string
 }
 
 type ValuesTransformEvent struct {
@@ -79,12 +87,17 @@ type ExecutableEvent struct {
 	StderrOutputRetriever StringRetriever
 }
 
+type FileEvent struct {
+	Path string
+}
+
 type Event struct {
 	Type                       EventType
 	Context                    EventContext
 	ResourceInformation        *ResourceEvent
 	ValuesTransformInformation *ValuesTransformEvent
 	ExecuableInformation       *ExecutableEvent
+	FileEvent                  *FileEvent
 	Error                      error
 }
 
@@ -159,6 +172,18 @@ func (h *eventHandler) sayThatResourceCreationFailed(resourceInformation *K8sRes
 	}
 }
 
+func (h *eventHandler) sayThatResourceTemplateExpansionFailed(templateName string, templateRetrieverMethod StringRetriever, err error, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type: ResourceTemplateExpansionFailure,
+		ResourceInformation: &ResourceEvent{
+			ExpandedTemplateRetriever: templateRetrieverMethod,
+			TemplateName:              templateName,
+		},
+		Context: EventContextFor(testUnit, testCase),
+		Error:   fmt.Errorf("on template (%s) %s", templateName, err),
+	}
+}
+
 func (h *eventHandler) sayThatResourceDeletionSucceeded(resourceInformation *K8sResourceInformation, testUnit *TestUnit, testCase *TestCase) {
 	h.eventChannel <- &Event{
 		Type: ResourceDeletionSuccess,
@@ -213,5 +238,66 @@ func (h *eventHandler) explainAttemptToCreateDefaultNamespace(generatedNameBase 
 				},
 			},
 		}
+	}
+}
+
+func (h *eventHandler) sayThatPipelineDefinitionIsInvalid(err error) {
+	h.eventChannel <- &Event{
+		Type:    PipelineDefinitionIsInvalid,
+		Context: EventContext{},
+		Error:   err,
+	}
+}
+
+func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *PipelineActionOutcome, testUnit *TestUnit, testCase *TestCase) {
+	switch action.Type {
+	case TemplatedResource:
+		templateOutputFunc := func() string {
+			sBytes, _ := io.ReadAll(outcome.OutputReader)
+			return string(sBytes)
+		}
+
+		if outcome.Error == nil {
+			h.sayThatResourceCreationSucceeded(outcome.CreatedResource, templateOutputFunc, testUnit, testCase)
+		} else {
+			switch typedError := outcome.Error.(type) {
+			case *TemplateError:
+				h.sayThatResourceTemplateExpansionFailed(typedError.TemplateName, templateOutputFunc, typedError, testUnit, testCase)
+			case *ResourceCreationError:
+				h.sayThatResourceCreationFailed(typedError.ResourceInformation, templateOutputFunc, typedError, testUnit, testCase)
+			}
+		}
+
+	case ValuesTransform:
+	case Executable:
+	}
+}
+
+func (handler *eventHandler) sayThatAssetDirectoryCreationFailed(path string, err error, testUnit *TestUnit, testCase *TestCase) {
+	handler.eventChannel <- &Event{
+		Type: AssetDirectoryCreationFailed,
+		FileEvent: &FileEvent{
+			Path: path,
+		},
+		Error:   err,
+		Context: EventContextFor(testUnit, testCase),
+	}
+}
+
+func (handler *eventHandler) sayThatAssetDirectoryCreationSucceeded(directoryPath string, testUnit *TestUnit, testCase *TestCase) {
+	handler.eventChannel <- &Event{
+		Type: AssetDirectoryCreatedSuccessfully,
+		FileEvent: &FileEvent{
+			Path: directoryPath,
+		},
+		Context: EventContextFor(testUnit, testCase),
+	}
+}
+
+func (handler *eventHandler) explainOutcomeOfAssetDirectoryCreationAttempt(directoryPath string, err error, testUnit *TestUnit, testCase *TestCase) {
+	if err != nil {
+		handler.sayThatAssetDirectoryCreationFailed(directoryPath, err, testUnit, testCase)
+	} else {
+		handler.sayThatAssetDirectoryCreationSucceeded(directoryPath, testUnit, testCase)
 	}
 }

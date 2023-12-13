@@ -1,0 +1,13 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-no-test
+spec:
+  containers:
+  - name: nginx
+    image: f5vwells/cgam-perf-test-nginx:{{ .Values.Producer.ImageVersion }}
+    imagePullPolicy: IfNotPresent
+    securityContext:
+        seccompProfile:
+            type: RuntimeDefault
