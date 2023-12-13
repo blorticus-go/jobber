@@ -72,7 +72,9 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 	case jobber.ResourceCreationSuccess:
 		l.SayContextually(event.Context, "Successfully created resource kind [%s] named [%s]", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name)
 	case jobber.ResourceCreationFailure:
-		l.SayContextually(event.Context, "Failed to create resource kind [%s] named [%s]: %s", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name, event.Error)
+		l.SayContextually(event.Context, "Failed to create resource kind [%s] named [%s]: %s\nTemplate:\n%s\n", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name, event.Error, event.ResourceInformation.ExpandedTemplateRetriever())
+	case jobber.ResourceTemplateExpansionFailure:
+		l.SayContextually(event.Context, "Template expansion failure: %s", event.Error)
 	case jobber.ResourceDeletionSuccess:
 		l.SayContextually(event.Context, "Successfully deleted resource kind [%s] named [%s]", event.ResourceInformation.ResourceDetails.Kind, event.ResourceInformation.ResourceDetails.Name)
 	case jobber.ResourceDeletionFailure:
@@ -95,6 +97,10 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 		l.SayContextually(event.Context, "Test case completed succesfully")
 	case jobber.TestingCompletedSuccesfully:
 		l.SayContextually(event.Context, "Testing completed successfully")
+	case jobber.AssetDirectoryCreatedSuccessfully:
+		l.SayContextually(event.Context, "Created directory [%s]", event.FileEvent.Path)
+	case jobber.AssetDirectoryCreationFailed:
+		l.SayContextually(event.Context, "Failed to create directory [%s]: %s", event.FileEvent.Path, event.Error)
 	}
 }
 
