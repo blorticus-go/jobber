@@ -14,6 +14,7 @@ type ConfigurationNamespace struct {
 }
 
 type ConfigurationDefinition struct {
+	DefaultValues         map[string]any                     `yaml:"DefaultValues"`
 	Namespaces            map[string]*ConfigurationNamespace `yaml:"Namespaces"`
 	PipelineRootDirectory string                             `yaml:"PipelineRootDirectory"`
 	Pipeline              []string                           `yaml:"Pipeline"`

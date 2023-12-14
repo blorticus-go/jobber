@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type PipelineActionType int
@@ -26,11 +28,16 @@ type PipelineAction struct {
 	ActionFullyQualifiedPath string
 }
 
+type PipelineCreatedResource struct {
+	Information *K8sResourceInformation
+	ApiObject   *unstructured.Unstructured
+}
+
 type PipelineActionOutcome struct {
 	Variables       *PipelineVariables
 	OutputReader    io.Reader
 	ErrorReader     io.Reader
-	CreatedResource *K8sResourceInformation
+	CreatedResource *PipelineCreatedResource
 	Error           error
 }
 
@@ -99,7 +106,7 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 		return []*PipelineActionOutcome{
 			{
 				Variables: pipelineVariables,
-				Error:     NewTemplateError(action.Descriptor, "failed to read resource template at (%s): %s", action.ActionFullyQualifiedPath, err),
+				Error:     NewTemplateError(action.Descriptor, "failed to parse resource template at (%s): %s", action.ActionFullyQualifiedPath, err),
 			},
 		}
 	}
@@ -109,8 +116,9 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 	if err = tmpl.Execute(templateBuffer, pipelineVariables); err != nil {
 		return []*PipelineActionOutcome{
 			{
-				Variables: pipelineVariables,
-				Error:     NewTemplateError(action.Descriptor, "failed to expand resource template: %s", err),
+				Variables:    pipelineVariables,
+				Error:        NewTemplateError(action.Descriptor, "failed to expand resource template: %s", err),
+				OutputReader: templateBuffer,
 			},
 		}
 	}
@@ -164,10 +172,13 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 		// created and unstructured are subtley different.  If unstructured used GenerateName in the metadata section, Name() will
 		// usually return the empty string (assuming it was not also set), but in this case, created.Name() would return the fully
 		// generated name.
-		outcome.CreatedResource = &K8sResourceInformation{
-			Kind:          created.GetKind(),
-			Name:          created.GetName(),
-			NamespaceName: created.GetNamespace(),
+		outcome.CreatedResource = &PipelineCreatedResource{
+			Information: &K8sResourceInformation{
+				Kind:          created.GetKind(),
+				Name:          created.GetName(),
+				NamespaceName: created.GetNamespace(),
+			},
+			ApiObject: created,
 		}
 
 		outcomes = append(outcomes, outcome)
@@ -181,5 +192,36 @@ func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables
 }
 
 func (action *PipelineAction) runValuesTransform(pipelineVariables *PipelineVariables) []*PipelineActionOutcome {
+	return nil
+}
+
+func (outcome *PipelineActionOutcome) WriteOutputToFile(filePath string, fileModeIfFileIsCreated os.FileMode) error {
+	if outcome.OutputReader != nil {
+		return writeReaderToFile(filePath, fileModeIfFileIsCreated, outcome.OutputReader)
+	}
+
+	return nil
+}
+
+func (outcome *PipelineActionOutcome) WriteErrorToFile(filePath string, fileModeIfFileIsCreated os.FileMode) error {
+	if outcome.ErrorReader != nil {
+		writeReaderToFile(filePath, fileModeIfFileIsCreated, outcome.ErrorReader)
+	}
+
+	return nil
+
+}
+
+func writeReaderToFile(filePath string, fileModeIfFileIsCreated os.FileMode, reader io.Reader) error {
+	fileHandle, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC, fileModeIfFileIsCreated)
+	if err != nil {
+		return err
+	}
+	defer fileHandle.Close()
+
+	if _, err := io.Copy(fileHandle, reader); err != nil {
+		return err
+	}
+
 	return nil
 }

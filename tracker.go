@@ -1,26 +1,26 @@
 package jobber
 
-type K8sResource struct {
+type DeletableK8sResource struct {
 	information    *K8sResourceInformation
 	deletionMethod func(object any) error
 }
 
 type ResourceDeletionAttempt struct {
-	Resource *K8sResource
+	Resource *DeletableK8sResource
 	Error    error
 }
 
 type CreatedResourceTracker struct {
-	notYetDeletedK8sResources []*K8sResource
+	notYetDeletedK8sResources []*DeletableK8sResource
 }
 
 func NewCreatedResourceTracker() *CreatedResourceTracker {
 	return &CreatedResourceTracker{
-		notYetDeletedK8sResources: make([]*K8sResource, 0, 10),
+		notYetDeletedK8sResources: make([]*DeletableK8sResource, 0, 10),
 	}
 }
 
-func (tracker *CreatedResourceTracker) AddCreatedResource(r *K8sResource) {
+func (tracker *CreatedResourceTracker) AddCreatedResource(r *DeletableK8sResource) {
 	tracker.notYetDeletedK8sResources = append(tracker.notYetDeletedK8sResources, r)
 }
 

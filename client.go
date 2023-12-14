@@ -16,6 +16,11 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
+var dpk = metav1.DeletePropagationForeground
+var defaultResourceDeletionOptions = metav1.DeleteOptions{
+	PropagationPolicy: &dpk,
+}
+
 type Client struct {
 	restConfig    *rest.Config
 	clientSet     *kubernetes.Clientset
@@ -58,6 +63,10 @@ func (client *Client) CreateNamespaceUsingGeneratedName(generatedBaseName string
 	return client.clientSet.CoreV1().Namespaces().Create(context.Background(), apiObject, metav1.CreateOptions{})
 }
 
+func (client *Client) DeleteNamespace(namespaceApiObject *corev1.Namespace) error {
+	return client.clientSet.CoreV1().Namespaces().Delete(context.Background(), namespaceApiObject.Name, defaultResourceDeletionOptions)
+}
+
 func (client *Client) MapToUnstructured(inputMap map[string]any) (*unstructured.Unstructured, error) {
 	candidate := &unstructured.Unstructured{
 		Object: inputMap,
@@ -90,4 +99,16 @@ func (client *Client) CreateResourceFromUnstructured(instance *unstructured.Unst
 
 func guessResourceFromKind(kind string) string {
 	return fmt.Sprintf("%ss", strings.ToLower(kind))
+}
+
+func (client *Client) DeleteResourceFromUnstructured(instance *unstructured.Unstructured) error {
+	gkv := instance.GroupVersionKind()
+
+	gkvResource := schema.GroupVersionResource{
+		Group:    gkv.Group,
+		Version:  gkv.Version,
+		Resource: guessResourceFromKind(gkv.Kind),
+	}
+
+	return client.dynamicClient.Resource(gkvResource).Namespace(instance.GetNamespace()).Delete(context.Background(), instance.GetName(), defaultResourceDeletionOptions)
 }

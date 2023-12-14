@@ -184,27 +184,6 @@ func (h *eventHandler) sayThatResourceTemplateExpansionFailed(templateName strin
 	}
 }
 
-func (h *eventHandler) sayThatResourceDeletionSucceeded(resourceInformation *K8sResourceInformation, testUnit *TestUnit, testCase *TestCase) {
-	h.eventChannel <- &Event{
-		Type: ResourceDeletionSuccess,
-		ResourceInformation: &ResourceEvent{
-			ResourceDetails: resourceInformation,
-		},
-		Context: EventContextFor(testUnit, testCase),
-	}
-}
-
-func (h *eventHandler) sayThatResourceDeletionFailed(resourceInformation *K8sResourceInformation, err error, testUnit *TestUnit, testCase *TestCase) {
-	h.eventChannel <- &Event{
-		Type: ResourceDeletionFailure,
-		ResourceInformation: &ResourceEvent{
-			ResourceDetails: resourceInformation,
-		},
-		Context: EventContextFor(testUnit, testCase),
-		Error:   err,
-	}
-}
-
 func (h *eventHandler) explainAttemptToCreateDefaultNamespace(generatedNameBase string, createdNamespaceApiObject *corev1.Namespace, context EventContext, errorOnCreationAttempt error) {
 	var namespaceName string
 	if createdNamespaceApiObject != nil {
@@ -258,7 +237,7 @@ func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *Pip
 		}
 
 		if outcome.Error == nil {
-			h.sayThatResourceCreationSucceeded(outcome.CreatedResource, templateOutputFunc, testUnit, testCase)
+			h.sayThatResourceCreationSucceeded(outcome.CreatedResource.Information, templateOutputFunc, testUnit, testCase)
 		} else {
 			switch typedError := outcome.Error.(type) {
 			case *TemplateError:
@@ -294,10 +273,11 @@ func (handler *eventHandler) sayThatAssetDirectoryCreationSucceeded(directoryPat
 	}
 }
 
-func (handler *eventHandler) explainOutcomeOfAssetDirectoryCreationAttempt(directoryPath string, err error, testUnit *TestUnit, testCase *TestCase) {
-	if err != nil {
-		handler.sayThatAssetDirectoryCreationFailed(directoryPath, err, testUnit, testCase)
-	} else {
-		handler.sayThatAssetDirectoryCreationSucceeded(directoryPath, testUnit, testCase)
+func (handler *eventHandler) explainAssetCreationOutcome(outcome *TestCaseAssetsDirectoryCreationOutcome, testUnit *TestUnit, testCase *TestCase) {
+	for _, successfullyCreatedDir := range outcome.SuccessfullyCreatedDirectoryPaths {
+		handler.sayThatAssetDirectoryCreationSucceeded(successfullyCreatedDir, testUnit, testCase)
+	}
+	if outcome.DirectoryCreationFailureError != nil {
+		handler.sayThatAssetDirectoryCreationFailed(outcome.DirectoryPathOfFailedCreation, outcome.DirectoryCreationFailureError, testUnit, testCase)
 	}
 }

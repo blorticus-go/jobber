@@ -1,11 +1,12 @@
 package jobber
 
 import (
-	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
 
-	"github.com/qdm12/reprint"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type TemplateExpansionNamespace struct {
@@ -16,21 +17,10 @@ type TemplateExpansionConfigVariables struct {
 	Namespaces map[string]*TemplateExpansionNamespace
 }
 
-type PipelineVariables struct {
-	Values map[string]any
-	Config *TemplateExpansionConfigVariables
-}
-
-type RunningContext struct {
-	testUnit *TestUnit
-	testCase *TestCase
-}
-
 type Runner struct {
-	client               *Client
-	config               *Configuration
-	defaultNamespaceName string
-	resourceTracker      *CreatedResourceTracker
+	client          *Client
+	config          *Configuration
+	resourceTracker *CreatedResourceTracker
 }
 
 func NewRunner(config *Configuration, client *Client) *Runner {
@@ -47,14 +37,14 @@ func (runner *Runner) createDefaultNamespace() (*corev1.Namespace, error) {
 		return nil, err
 	}
 
-	runner.resourceTracker.AddCreatedResource(&K8sResource{
+	runner.resourceTracker.AddCreatedResource(&DeletableK8sResource{
 		information: &K8sResourceInformation{
-			Kind:          "namespace",
+			Kind:          "Namespace",
 			Name:          defaultNamespaceApiObject.Name,
 			NamespaceName: "",
 		},
 		deletionMethod: func(object any) error {
-			return runner.client.clientSet.CoreV1().Namespaces().Delete(context.Background(), defaultNamespaceApiObject.Name, metav1.DeleteOptions{})
+			return runner.client.DeleteNamespace(defaultNamespaceApiObject)
 		},
 	})
 
@@ -65,12 +55,12 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	eventHandler := &eventHandler{eventChannel}
 	assetsDirectoryManager := NewContextualAssetsDirectoryManager()
 
-	if err := assetsDirectoryManager.CreateTestAssetsRootDirectory(); err != nil {
-		eventHandler.sayThatAssetDirectoryCreationFailed(assetsDirectoryManager.TestRootAssetDirectoryPath(), err, nil, nil)
+	outcome := assetsDirectoryManager.CreateTestAssetsRootDirectory()
+	if eventHandler.explainAssetCreationOutcome(outcome, nil, nil); outcome.DirectoryCreationFailureError != nil {
 		return
-	} else {
-		eventHandler.sayThatAssetDirectoryCreationSucceeded(assetsDirectoryManager.TestRootAssetDirectoryPath(), nil, nil)
 	}
+
+	templateExpansionVariables := NewPipelineVariablesWithSeedValues(runner.config.Test.Definition.DefaultValues)
 
 	testCasePipeline, err := NewPipelineFromStringDescriptors(runner.config.Test.Definition.Pipeline, runner.config.Test.Definition.PipelineRootDirectory)
 	if err != nil {
@@ -81,59 +71,54 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	for _, testUnit := range runner.config.Test.Units {
 		eventHandler.sayThatUnitStarted(testUnit)
 
-		if err := assetsDirectoryManager.CreateTestUnitDirectory(testUnit); err != nil {
-			eventHandler.sayThatAssetDirectoryCreationFailed(assetsDirectoryManager.TestRootAssetDirectoryPath(), err, testUnit, nil)
+		outcome := assetsDirectoryManager.CreateTestUnitDirectory(testUnit)
+		if eventHandler.explainAssetCreationOutcome(outcome, testUnit, nil); outcome.DirectoryCreationFailureError != nil {
 			return
-		} else {
-			eventHandler.sayThatAssetDirectoryCreationSucceeded(assetsDirectoryManager.TestUnitAssetDirectoryPathFor(testUnit), testUnit, nil)
 		}
+
+		templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testUnit.Values)
 
 		for _, testCase := range runner.config.Test.Cases {
 			eventHandler.sayThatCaseStarted(testUnit, testCase)
 
 			outcome := assetsDirectoryManager.CreateTestCaseDirectories(testUnit, testCase)
-			for _, successfullyCreatedDir := range outcome.SuccessfullyCreatedDirectoryPaths {
-				eventHandler.sayThatAssetDirectoryCreationSucceeded(successfullyCreatedDir, testUnit, testCase)
-			}
-			if outcome.DirectoryCreationFailureError != nil {
-				eventHandler.sayThatAssetDirectoryCreationFailed(outcome.DirectoryPathOfFailedCreation, outcome.DirectoryCreationFailureError, testUnit, testCase)
+			if eventHandler.explainAssetCreationOutcome(outcome, testUnit, testCase); outcome.DirectoryCreationFailureError != nil {
 				return
 			}
 
 			nsObject, err := runner.createDefaultNamespace()
-			eventHandler.explainAttemptToCreateDefaultNamespace(runner.config.Test.Definition.Namespaces["Default"].Basename, nsObject, EventContextFor(testUnit, testCase), err)
-			if err != nil {
+			if eventHandler.explainAttemptToCreateDefaultNamespace(runner.config.Test.Definition.Namespaces["Default"].Basename, nsObject, EventContextFor(testUnit, testCase), err); err != nil {
 				return
 			}
 
-			testCaseScopedCopyOfVariables := &PipelineVariables{
-				Values: reprint.This(testCase.Values).(map[string]any),
-				Config: &TemplateExpansionConfigVariables{
-					Namespaces: map[string]*TemplateExpansionNamespace{
-						"Default": {
-							GeneratedName: nsObject.Name,
-						},
-					},
-				},
-			}
+			templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testUnit.Values).AddNamespaceToConfig("Default", nsObject.Name)
 
 			for action := testCasePipeline.Restart(); action != nil; action = testCasePipeline.NextAction() {
-				for _, outcome := range action.Run(testCaseScopedCopyOfVariables, runner.client) {
+				for _, outcome := range action.Run(templateExpansionVariables, runner.client) {
+					writeActionOutcomeInformationToAssetsDirectory(action, outcome, assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase))
+
 					if eventHandler.explainActionOutcome(action, outcome, testUnit, testCase); outcome.Error != nil {
 						return
 					}
+					if outcome.CreatedResource != nil {
+						runner.resourceTracker.AddCreatedResource(&DeletableK8sResource{
+							information: outcome.CreatedResource.Information,
+							deletionMethod: func(object any) error {
+								return runner.client.DeleteResourceFromUnstructured(outcome.CreatedResource.ApiObject)
+							},
+						})
+					}
 				}
-
 			}
 
-			for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
-				if attemptDetails.Error != nil {
-					eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
-					return
-				}
+			// for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
+			// 	if attemptDetails.Error != nil {
+			// 		eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
+			// 		return
+			// 	}
 
-				eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
-			}
+			// 	eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
+			// }
 
 			eventHandler.sayThatCaseCompletedSuccessfully(testUnit, testCase)
 		}
@@ -142,4 +127,49 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	}
 
 	eventHandler.sayThatTestingCompletedSuccessfully()
+}
+
+func writeActionOutcomeInformationToAssetsDirectory(action *PipelineAction, outcome *PipelineActionOutcome, testCaseAssetsDirectories *TestCaseDirectoryPaths) {
+	switch action.Type {
+	case TemplatedResource:
+		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ExpandedTemplates, action.ActionFullyQualifiedPath)
+		outcome.WriteOutputToFile(outputFilesBasePath, 0600)
+
+	case Executable:
+		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.Executables, action.ActionFullyQualifiedPath)
+		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
+		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
+
+	case ValuesTransform:
+		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ValuesTransforms, action.ActionFullyQualifiedPath)
+		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
+		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
+	}
+}
+
+func deriveActionOutputFilesBasePath(depositDirectoryPath string, actionFullyQualifiedName string) string {
+	actionFullyQalifiedNamePathElements := strings.Split(actionFullyQualifiedName, "/")
+	actionBasename := actionFullyQalifiedNamePathElements[len(actionFullyQalifiedNamePathElements)-1]
+
+	basePath := fmt.Sprintf("%s/%s", depositDirectoryPath, actionBasename)
+	candidatePath := basePath
+
+	for discriminatorInt := 0; fileExists(candidatePath); discriminatorInt++ {
+		candidatePath = fmt.Sprintf("%s-%d", basePath, discriminatorInt)
+	}
+
+	return candidatePath
+}
+
+func fileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, os.ErrNotExist):
+		return false
+	default:
+		panic(fmt.Sprintf("os.Stat failed: %s", err))
+	}
 }

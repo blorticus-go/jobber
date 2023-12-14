@@ -14,6 +14,8 @@ type TestCaseAssetsDirectoryCreationOutcome struct {
 type TestCaseDirectoryPaths struct {
 	Root              string
 	ExpandedTemplates string
+	ValuesTransforms  string
+	Executables       string
 	RetrievedAssets   string
 }
 
@@ -30,17 +32,22 @@ func NewContextualAssetsDirectoryManager() *ContextualAssetsDirectoryManager {
 	}
 }
 
-func (m *ContextualAssetsDirectoryManager) CreateTestAssetsRootDirectory() error {
+func (m *ContextualAssetsDirectoryManager) CreateTestAssetsRootDirectory() *TestCaseAssetsDirectoryCreationOutcome {
 	createdDirectoryPath, err := os.MkdirTemp("", "jobber.")
 	if err != nil {
-		return err
+		return &TestCaseAssetsDirectoryCreationOutcome{
+			DirectoryCreationFailureError: err,
+		}
 	}
 
 	m.testRootAssetDirectoryPath = createdDirectoryPath
-	return nil
+
+	return &TestCaseAssetsDirectoryCreationOutcome{
+		SuccessfullyCreatedDirectoryPaths: []string{createdDirectoryPath},
+	}
 }
 
-func (m *ContextualAssetsDirectoryManager) CreateTestUnitDirectory(testUnit *TestUnit) error {
+func (m *ContextualAssetsDirectoryManager) CreateTestUnitDirectory(testUnit *TestUnit) *TestCaseAssetsDirectoryCreationOutcome {
 	if m.testRootAssetDirectoryPath == "" {
 		panic("attempt to CreateTestUnitDirectory() before CreateTestAssetsRootDirectory()")
 	}
@@ -50,7 +57,18 @@ func (m *ContextualAssetsDirectoryManager) CreateTestUnitDirectory(testUnit *Tes
 
 	m.testCaseAssetsDirectoryPathByUnitAndCaseName[testUnit.Name] = make(map[string]*TestCaseDirectoryPaths)
 
-	return os.Mkdir(proposedPath, 0700)
+	err := os.Mkdir(proposedPath, 0700)
+
+	if err != nil {
+		return &TestCaseAssetsDirectoryCreationOutcome{
+			DirectoryPathOfFailedCreation: proposedPath,
+			DirectoryCreationFailureError: err,
+		}
+	}
+
+	return &TestCaseAssetsDirectoryCreationOutcome{
+		SuccessfullyCreatedDirectoryPaths: []string{proposedPath},
+	}
 }
 
 func (m *ContextualAssetsDirectoryManager) CreateTestCaseDirectories(testUnit *TestUnit, testCase *TestCase) *TestCaseAssetsDirectoryCreationOutcome {
@@ -75,8 +93,10 @@ func (m *ContextualAssetsDirectoryManager) CreateTestCaseDirectories(testUnit *T
 
 	proposedExpandedTemplatesPath := fmt.Sprintf("%s/%s", proposedTestCaseRootPath, "expanded-templates")
 	proposedRetrievedAssetsPath := fmt.Sprintf("%s/%s", proposedTestCaseRootPath, "retrieved-assets")
+	proposedValuesTransformOutputPath := fmt.Sprintf("%s/%s", proposedTestCaseRootPath, "values-transform-output")
+	proposedExecutableOutputPath := fmt.Sprintf("%s/%s", proposedTestCaseRootPath, "executable-output")
 
-	for _, proposedPath := range []string{proposedExpandedTemplatesPath, proposedRetrievedAssetsPath} {
+	for _, proposedPath := range []string{proposedExpandedTemplatesPath, proposedRetrievedAssetsPath, proposedValuesTransformOutputPath, proposedExecutableOutputPath} {
 		if err := os.Mkdir(proposedPath, 0700); err != nil {
 			outcome.DirectoryPathOfFailedCreation = proposedPath
 			outcome.DirectoryCreationFailureError = err
@@ -90,6 +110,8 @@ func (m *ContextualAssetsDirectoryManager) CreateTestCaseDirectories(testUnit *T
 		Root:              proposedTestCaseRootPath,
 		ExpandedTemplates: proposedExpandedTemplatesPath,
 		RetrievedAssets:   proposedRetrievedAssetsPath,
+		ValuesTransforms:  proposedValuesTransformOutputPath,
+		Executables:       proposedExecutableOutputPath,
 	}
 
 	return outcome
