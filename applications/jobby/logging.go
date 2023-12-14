@@ -100,7 +100,15 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 	case jobber.AssetDirectoryCreatedSuccessfully:
 		l.SayContextually(event.Context, "Created directory [%s]", event.FileEvent.Path)
 	case jobber.AssetDirectoryCreationFailed:
-		l.SayContextually(event.Context, "Failed to create directory [%s]: %s", event.FileEvent.Path, event.Error)
+		if event.FileEvent.Path == "" {
+			if event.Context.UnitName == "" {
+				l.SayContextually(event.Context, "Failed to create asset root temp directory: %s", event.Error)
+			} else {
+				l.SayContextually(event.Context, "Failed to create temp directory: %s", event.Error)
+			}
+		} else {
+			l.SayContextually(event.Context, "Failed to create directory [%s]: %s", event.FileEvent.Path, event.Error)
+		}
 	}
 }
 
