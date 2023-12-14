@@ -1,14 +1,44 @@
 package jobber_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/blorticus-go/jobber"
+	"github.com/go-test/deep"
 )
 
-var goodConfigs = map[string]string{
-	"goodConfig01": `---
+type configTestCase struct {
+	caseName       string
+	configAsString string
+	expectedStruct *jobber.Configuration
+	expectAnError  bool
+}
+
+func (c *configTestCase) Run() error {
+	config, err := jobber.ReadConfigurationYamlFromReader(strings.NewReader(c.configAsString))
+
+	if err != nil {
+		if !c.expectAnError {
+			return fmt.Errorf("on test case [%s] expected no error, but got error = (%s)", c.caseName, err)
+		}
+		return nil
+	} else if c.expectAnError {
+		return fmt.Errorf("on test case [%s] expected an error, but got no error", c.caseName)
+	}
+
+	if diff := deep.Equal(config, c.expectedStruct); diff != nil {
+		return fmt.Errorf("on test case [%s] generated Configuration struct does not match expected: %s", c.caseName, diff)
+	}
+
+	return nil
+}
+
+var testCases = []*configTestCase{
+	{
+		caseName: "goodConfig01",
+		configAsString: `---
 Test:
   Definition:
     Namespaces:
@@ -33,7 +63,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -45,15 +75,82 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-}
-
-var badConfigs = map[string]string{
-	"config cannot be empty": `---
+		expectedStruct: &jobber.Configuration{
+			Test: &jobber.ConfigurationTest{
+				Definition: &jobber.ConfigurationDefinition{
+					Namespaces: map[string]*jobber.ConfigurationNamespace{
+						"Default": {
+							Basename: "perftest",
+						},
+					},
+					PipelineRootDirectory: "/opt/pipeline/root",
+					DefaultValues:         nil,
+					Pipeline: []string{
+						"resources/nginx-producer.yaml",
+						"resources/telemetry.yaml",
+						"values-transforms/post-asm.sh",
+						"resources/shared-pvc.yaml",
+						"resources/jmeter-job.yaml",
+						"resources/jtl-processor-job.yaml",
+						"resources/container-resources-job.yaml",
+						"resources/retrieval-pod.yaml",
+						"executables/extract-data.sh",
+					},
+				},
+				Cases: []*jobber.TestCase{
+					{
+						Name: "100TPS",
+						Values: map[string]any{
+							"TPS": int(100),
+						},
+					},
+					{
+						Name: "500TPS",
+						Values: map[string]any{
+							"TPS": int(500),
+						},
+					},
+				},
+				Units: []*jobber.TestUnit{
+					{
+						Name: "NoSidecar",
+						Values: map[string]any{
+							"TestDurationInSeconds": int(600),
+							"InjectASidecar":        "no",
+						},
+					},
+					{
+						Name: "mTLSOnly",
+						Values: map[string]any{
+							"TestDurationInSeconds": int(600),
+							"InjectASidecar":        "yes",
+							"UseMtls":               "yes",
+							"UseTelemetry":          "no",
+							"UsePcapper":            "no",
+						},
+					},
+				},
+			},
+		},
+		expectAnError: false,
+	},
+	{
+		caseName:      "config cannot be empty",
+		expectAnError: true,
+		configAsString: `---
 `,
-	"invalid yaml will fail": `---
+	},
+	{
+		caseName:      "invalid yaml will fail",
+		expectAnError: true,
+		configAsString: `---
   florb
 `,
-	".Test must be defined": `---
+	},
+	{
+		caseName:      ".Test must be defined",
+		expectAnError: true,
+		configAsString: `---
 Foo:
     Definition:
       Namespaces:
@@ -78,7 +175,7 @@ Foo:
         Values:
           TPS: 500
     Units:
-      - Name: NoSidcar
+      - Name: NoSidecar
         Values:
           TestDurationInSeconds: 600
           InjectASidecar: no
@@ -90,7 +187,11 @@ Foo:
           UseTelemetry: no
           UsePcapper: no
   `,
-	".Test.Definition must exist": `---
+	},
+	{
+		caseName:      ".Test.Definition must exist",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Cases:
     - Name: 100TPS
@@ -100,7 +201,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -112,7 +213,11 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-	".Test.Definition.Namespaces must exist": `---
+	},
+	{
+		caseName:      ".Test.Definition.Namespaces must exist",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Definition:
     PipelineRootDirectory: /opt/pipeline/root
@@ -134,7 +239,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -146,7 +251,11 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-	".Test.Definition.Namespaces cannot be empty": `---
+	},
+	{
+		caseName:      ".Test.Definition.Namespaces cannot be empty",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Definition:
     Namespaces:
@@ -181,7 +290,11 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-	".Test.Definition.Namespaces.Default must exist": `---
+	},
+	{
+		caseName:      ".Test.Definition.Namespaces.Default must exist",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Definition:
     Namespaces:
@@ -206,7 +319,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -218,7 +331,11 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-	".Test.Definition.Pipeline must exist": `---
+	},
+	{
+		caseName:      ".Test.Definition.Pipeline must exist",
+		expectAnError: true,
+		configAsString: `---
 Test:
     Definition:
       PipelineRootDirectory: /opt/pipeline/root
@@ -233,7 +350,7 @@ Test:
         Values:
           TPS: 500
     Units:
-      - Name: NoSidcar
+      - Name: NoSidecar
         Values:
           TestDurationInSeconds: 600
           InjectASidecar: no
@@ -245,7 +362,11 @@ Test:
           UseTelemetry: no
           UsePcapper: no
   `,
-	".Test.Definition.Pipeline cannot be an empty list": `---
+	},
+	{
+		caseName:      ".Test.Definition.Pipeline cannot be an empty list",
+		expectAnError: true,
+		configAsString: `---
 Test:
     Definition:
       Namespaces:
@@ -261,7 +382,7 @@ Test:
         Values:
           TPS: 500
     Units:
-      - Name: NoSidcar
+      - Name: NoSidecar
         Values:
           TestDurationInSeconds: 600
           InjectASidecar: no
@@ -273,7 +394,11 @@ Test:
           UseTelemetry: no
           UsePcapper: no
   `,
-	".Test.Cases must exist": `---
+	},
+	{
+		caseName:      ".Test.Cases must exist",
+		expectAnError: true,
+		configAsString: `---
 Test:
     Definition:
       Namespaces:
@@ -291,7 +416,7 @@ Test:
         - resources/retrieval-pod.yaml
         - executables/extract-data.sh
     Units:
-      - Name: NoSidcar
+      - Name: NoSidecar
         Values:
           TestDurationInSeconds: 600
           InjectASidecar: no
@@ -303,7 +428,11 @@ Test:
           UseTelemetry: no
           UsePcapper: no
   `,
-	".Test.Cases cannot be an empty list": `---
+	},
+	{
+		caseName:      ".Test.Cases cannot be an empty list",
+		expectAnError: true,
+		configAsString: `---
 Test:
     Definition:
       Namespaces:
@@ -322,7 +451,7 @@ Test:
         - executables/extract-data.sh
     Cases: []
     Units:
-      - Name: NoSidcar
+      - Name: NoSidecar
         Values:
           TestDurationInSeconds: 600
           InjectASidecar: no
@@ -334,7 +463,11 @@ Test:
           UseTelemetry: no
           UsePcapper: no
   `,
-	".Test.Units must be defined": `---
+	},
+	{
+		caseName:      ".Test.Units must be defined",
+		expectAnError: true,
+		configAsString: `---
 Test:
     Definition:
       Namespaces:
@@ -359,7 +492,11 @@ Test:
         Values:
           TPS: 500
   `,
-	".Test.Units cannot be empty": `---
+	},
+	{
+		caseName:      ".Test.Units cannot be empty",
+		expectAnError: true,
+		configAsString: `---
 Test:
     Definition:
       Namespaces:
@@ -385,7 +522,11 @@ Test:
           TPS: 500
     Units: []
   `,
-	".Test.Definition.Pipeline action type (florp) is not valid": `---
+	},
+	{
+		caseName:      ".Test.Definition.Pipeline action type (florp) is not valid",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Definition:
     Namespaces:
@@ -410,7 +551,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -422,7 +563,11 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-	".Test.Definition.Pipeline entries must be <type>/<target>": `---
+	},
+	{
+		caseName:      ".Test.Definition.Pipeline entries must be <type>/<target>",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Definition:
     Namespaces:
@@ -447,7 +592,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -459,7 +604,11 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-	".Test.Definition.Pipeline entries must be <type>/<target> without additional slashes": `---
+	},
+	{
+		caseName:      ".Test.Definition.Pipeline entries must be <type>/<target> without additional slashes",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Definition:
     Namespaces:
@@ -484,7 +633,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -496,7 +645,11 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
-	".Test.Definition.PipelineDirectoryRoot must be defined": `---
+	},
+	{
+		caseName:      ".Test.Definition.PipelineDirectoryRoot must be defined",
+		expectAnError: true,
+		configAsString: `---
 Test:
   Definition:
     Namespaces:
@@ -520,7 +673,7 @@ Test:
       Values:
         TPS: 500
   Units:
-    - Name: NoSidcar
+    - Name: NoSidecar
       Values:
         TestDurationInSeconds: 600
         InjectASidecar: no
@@ -532,24 +685,13 @@ Test:
         UseTelemetry: no
         UsePcapper: no
 `,
+	},
 }
 
-func TestGoodConfigs(t *testing.T) {
-	for configName, configYamlString := range goodConfigs {
-		if _, err := jobber.ReadConfigurationYamlFromReader(strings.NewReader(configYamlString)); err != nil {
-			if err != nil {
-				t.Errorf("on good config named [%s] received an error while processing: %s", configName, err.Error())
-			}
-		}
-	}
-}
-
-func TestBadConfigs(t *testing.T) {
-	for configName, configYamlString := range badConfigs {
-		if _, err := jobber.ReadConfigurationYamlFromReader(strings.NewReader(configYamlString)); err != nil {
-			if err == nil {
-				t.Errorf("on bad config named [%s] expected an error while processing, but received none", configName)
-			}
+func TestConfigs(t *testing.T) {
+	for _, testCase := range testCases {
+		if err := testCase.Run(); err != nil {
+			t.Error(err)
 		}
 	}
 }

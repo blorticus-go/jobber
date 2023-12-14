@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Masterminds/sprig"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -101,7 +102,7 @@ func (action *PipelineAction) Run(pipelineVariables *PipelineVariables, client *
 var yamlDocumentSplitPattern = regexp.MustCompile(`(?m)^---$`)
 
 func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVariables, client *Client) []*PipelineActionOutcome {
-	tmpl, err := template.ParseFiles(action.ActionFullyQualifiedPath)
+	tmpl, err := template.New(filepath.Base(action.ActionFullyQualifiedPath)).Funcs(sprig.FuncMap()).Funcs(JobberTemplateFunctions()).ParseFiles(action.ActionFullyQualifiedPath)
 	if err != nil {
 		return []*PipelineActionOutcome{
 			{
@@ -146,42 +147,46 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 			return append(outcomes, outcome)
 		}
 
-		unstructured, err := client.MapToUnstructured(decodedYaml)
-		if err != nil {
-			outcome.Error = NewTemplateError(action.Descriptor, "expanded template yaml is not valid resource definition: %s", err)
-			return append(outcomes, outcome)
-		}
+		if len(decodedYaml) > 0 {
+			unstructured, err := client.MapToUnstructured(decodedYaml)
+			if err != nil {
+				outcome.Error = NewTemplateError(action.Descriptor, "expanded template yaml is not valid resource definition: %s", err)
+				return append(outcomes, outcome)
+			}
 
-		if unstructured.GetNamespace() == "" {
-			unstructured.SetNamespace(pipelineVariables.Config.Namespaces["Default"].GeneratedName)
-		}
+			if unstructured.GetNamespace() == "" {
+				unstructured.SetNamespace(pipelineVariables.Config.Namespaces["Default"].GeneratedName)
+			}
 
-		created, err := client.CreateResourceFromUnstructured(unstructured)
-		if err != nil {
-			outcome.Error = NewResourceCreationError(
-				action.Descriptor,
-				&K8sResourceInformation{
-					Kind:          unstructured.GetKind(),
-					Name:          unstructured.GetName(),
-					NamespaceName: unstructured.GetNamespace(),
+			created, err := client.CreateResourceFromUnstructured(unstructured)
+			if err != nil {
+				outcome.Error = NewResourceCreationError(
+					action.Descriptor,
+					&K8sResourceInformation{
+						Kind:          unstructured.GetKind(),
+						Name:          unstructured.GetName(),
+						NamespaceName: unstructured.GetNamespace(),
+					},
+					err.Error())
+				return append(outcomes, outcome)
+			}
+
+			// created and unstructured are subtley different.  If unstructured used GenerateName in the metadata section, Name() will
+			// usually return the empty string (assuming it was not also set), but in this case, created.Name() would return the fully
+			// generated name.
+			outcome.CreatedResource = &PipelineCreatedResource{
+				Information: &K8sResourceInformation{
+					Kind:          created.GetKind(),
+					Name:          created.GetName(),
+					NamespaceName: created.GetNamespace(),
 				},
-				err.Error())
-			return append(outcomes, outcome)
-		}
+				ApiObject: created,
+			}
 
-		// created and unstructured are subtley different.  If unstructured used GenerateName in the metadata section, Name() will
-		// usually return the empty string (assuming it was not also set), but in this case, created.Name() would return the fully
-		// generated name.
-		outcome.CreatedResource = &PipelineCreatedResource{
-			Information: &K8sResourceInformation{
-				Kind:          created.GetKind(),
-				Name:          created.GetName(),
-				NamespaceName: created.GetNamespace(),
-			},
-			ApiObject: created,
-		}
+			pipelineVariables.Runtime.Add(created)
 
-		outcomes = append(outcomes, outcome)
+			outcomes = append(outcomes, outcome)
+		}
 	}
 
 	return outcomes

@@ -11,7 +11,13 @@ import (
 func TestVariablesBase(t *testing.T) {
 	v := jobber.NewEmptyPipelineVariables()
 
-	expectedStructureWhenEmpty := &jobber.PipelineVariables{Values: map[string]any{}, Config: &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}}}
+	expectedStructureWhenEmpty := &jobber.PipelineVariables{
+		Values: map[string]any{},
+		Config: &jobber.TemplateExpansionConfigVariables{
+			Namespaces: map[string]*jobber.TemplateExpansionNamespace{},
+		},
+		Runtime: &jobber.PipelineRuntimeValues{},
+	}
 
 	if diff := deep.Equal(v, expectedStructureWhenEmpty); diff != nil {
 		t.Errorf("on NewEmptyPipelineVariables, expect empty variables, got diff = %s", diff)
@@ -46,6 +52,7 @@ func TestVariablesBase(t *testing.T) {
 				},
 			},
 		},
+		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
 		t.Errorf("on AddNamespaceToConfig for copy, expected does not match received, diff = %s", diff)
 	}
@@ -66,7 +73,8 @@ func TestVariablesBase(t *testing.T) {
 			"bar": true,
 			"baz": "blah",
 		},
-		Config: &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Config:  &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
 		t.Errorf("on creation with seed values: %s", diff)
 	}
@@ -111,7 +119,8 @@ func TestVariablesMerge(t *testing.T) {
 				"here": "there",
 			},
 		},
-		Config: &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Config:  &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
 		t.Errorf("on first merge of variables: %s", diff)
 	}
@@ -145,7 +154,8 @@ func TestVariablesMerge(t *testing.T) {
 				"no": "where",
 			},
 		},
-		Config: &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Config:  &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
 		t.Errorf("on second merge of variables: %s", diff)
 	}

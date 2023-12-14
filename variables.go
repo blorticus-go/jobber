@@ -1,10 +1,70 @@
 package jobber
 
-import "github.com/qdm12/reprint"
+import (
+	"fmt"
+
+	"github.com/qdm12/reprint"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+type gvkKey string
+type resourceName string
+
+func gvkKeyFromGroupVersionKind(gvk schema.GroupVersionKind) gvkKey {
+	return gvkKey(fmt.Sprintf("%s\t%s\t%s", gvk.Group, gvk.Version, gvk.Kind))
+}
+
+func gvkKeyFromGVKStrings(group, version, kind string) gvkKey {
+	return gvkKey(fmt.Sprintf("%s\t%s\t%s", group, version, kind))
+}
+
+type PipelineRuntimeValues struct {
+	createdAssets map[gvkKey]map[resourceName]*unstructured.Unstructured
+}
+
+func NewEmptyPipelineRuntimeValues() *PipelineRuntimeValues {
+	return &PipelineRuntimeValues{
+		createdAssets: make(map[gvkKey]map[resourceName]*unstructured.Unstructured),
+	}
+}
+
+func (values *PipelineRuntimeValues) Add(u *unstructured.Unstructured) *PipelineRuntimeValues {
+	key := gvkKeyFromGroupVersionKind(u.GroupVersionKind())
+
+	if values.createdAssets[key] == nil {
+		values.createdAssets[key] = make(map[resourceName]*unstructured.Unstructured)
+	}
+
+	values.createdAssets[key][resourceName(u.GetName())] = u
+
+	return values
+}
+
+func (values *PipelineRuntimeValues) CreatedAsset(group string, version string, kind string, name string) *unstructured.Unstructured {
+	return values.createdAssets[gvkKeyFromGVKStrings(group, version, kind)][resourceName(name)]
+}
+
+func (values *PipelineRuntimeValues) CreatedPod(podName string) (*corev1.Pod, error) {
+	typed := new(corev1.Pod)
+
+	if u := values.CreatedAsset("", "v1", "Pod", podName); u == nil {
+		return nil, fmt.Errorf("no created pod named (%s)", podName)
+	} else {
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, typed); err != nil {
+			return nil, err
+		}
+	}
+
+	return typed, nil
+}
 
 type PipelineVariables struct {
-	Values map[string]any
-	Config *TemplateExpansionConfigVariables
+	Values  map[string]any
+	Config  *TemplateExpansionConfigVariables
+	Runtime *PipelineRuntimeValues
 }
 
 func NewEmptyPipelineVariables() *PipelineVariables {
@@ -13,6 +73,7 @@ func NewEmptyPipelineVariables() *PipelineVariables {
 		Config: &TemplateExpansionConfigVariables{
 			Namespaces: make(map[string]*TemplateExpansionNamespace),
 		},
+		Runtime: NewEmptyPipelineRuntimeValues(),
 	}
 }
 

@@ -27,7 +27,7 @@ type TestCase struct {
 
 type TestUnit struct {
 	Name   string         `yaml:"Name"`
-	Values map[string]any `yaml:"Value"`
+	Values map[string]any `yaml:"Values"`
 }
 
 type ConfigurationTest struct {
@@ -45,11 +45,11 @@ func (c *Configuration) validate() error {
 		return fmt.Errorf(".Test must exist")
 	}
 
-	if c.Test.Cases == nil {
+	if c.Test.Cases == nil || len(c.Test.Cases) == 0 {
 		return fmt.Errorf(".Test.Cases must exist and cannot be an empty list")
 	}
 
-	if c.Test.Units == nil {
+	if c.Test.Units == nil || len(c.Test.Units) == 0 {
 		return fmt.Errorf(".Test.Units must exist and cannot be an empty list")
 	}
 
@@ -65,12 +65,12 @@ func (c *Configuration) validate() error {
 		return fmt.Errorf(".Test.Definition.Namepsaces must define at least the 'Default' namespace")
 	}
 
-	if c.Test.Definition.Pipeline == nil {
+	if c.Test.Definition.Pipeline == nil || len(c.Test.Definition.Pipeline) == 0 {
 		return fmt.Errorf(".Test.Definition.Pipeline must exist and must not be an empty list")
 	}
 
 	if c.Test.Definition.PipelineRootDirectory == "" {
-		return fmt.Errorf(".Test.Definition.PipelineRootDirectory must exist and my not be empty")
+		return fmt.Errorf(".Test.Definition.PipelineRootDirectory must exist and my not be the empty string")
 	}
 
 	for pipelineEntryIndex, value := range c.Test.Definition.Pipeline {
