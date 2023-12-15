@@ -6,7 +6,6 @@ import (
 	"github.com/qdm12/reprint"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -48,17 +47,11 @@ func (values *PipelineRuntimeValues) CreatedAsset(group string, version string, 
 }
 
 func (values *PipelineRuntimeValues) CreatedPod(podName string) (*corev1.Pod, error) {
-	typed := new(corev1.Pod)
-
 	if u := values.CreatedAsset("", "v1", "Pod", podName); u == nil {
 		return nil, fmt.Errorf("no created pod named (%s)", podName)
 	} else {
-		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, typed); err != nil {
-			return nil, err
-		}
+		return UnstructuredToPodType(u)
 	}
-
-	return typed, nil
 }
 
 type PipelineVariables struct {

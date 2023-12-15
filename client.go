@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -111,4 +113,48 @@ func (client *Client) DeleteResourceFromUnstructured(instance *unstructured.Unst
 	}
 
 	return client.dynamicClient.Resource(gkvResource).Namespace(instance.GetNamespace()).Delete(context.Background(), instance.GetName(), defaultResourceDeletionOptions)
+}
+
+func (client *Client) WaitForPodRunningState(unstructuredPod *unstructured.Unstructured, amountOfTimeToWait time.Duration) (updatedUnstructuredPod *unstructured.Unstructured, err error) {
+	podApiObject, err := UnstructuredToPodType(unstructuredPod)
+	if err != nil {
+		return nil, err
+	}
+
+	t := &WaitTimer{
+		MaximumTimeToWait: amountOfTimeToWait,
+		ProbeInterval:     time.Second,
+	}
+
+	err = t.TestExpectation(
+		podApiObject,
+		func(kao K8sApiObject) (K8sApiObject, error) {
+			return client.clientSet.CoreV1().Pods(kao.GetNamespace()).Get(context.Background(), kao.GetName(), metav1.GetOptions{})
+		},
+		func(kao K8sApiObject) (expectationReached bool, errorOccurred error) {
+			return (kao != nil && kao.(*corev1.Pod).Status.Phase == corev1.PodRunning), nil
+		})
+
+	if err != nil {
+		return unstructuredPod, err
+	}
+
+	uMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(podApiObject)
+	if err != nil {
+		return unstructuredPod, err
+	}
+
+	return &unstructured.Unstructured{
+		Object: uMap,
+	}, nil
+}
+
+func UnstructuredToPodType(u *unstructured.Unstructured) (*corev1.Pod, error) {
+	typed := new(corev1.Pod)
+
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, typed); err != nil {
+		return nil, err
+	}
+
+	return typed, nil
 }

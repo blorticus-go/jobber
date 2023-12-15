@@ -2,7 +2,6 @@ package jobber
 
 import (
 	"fmt"
-	"io"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -232,8 +231,11 @@ func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *Pip
 	switch action.Type {
 	case TemplatedResource:
 		templateOutputFunc := func() string {
-			sBytes, _ := io.ReadAll(outcome.OutputReader)
-			return string(sBytes)
+			if outcome.OutputBuffer != nil {
+				return outcome.OutputBuffer.String()
+			}
+
+			return ""
 		}
 
 		if outcome.Error == nil {

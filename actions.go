@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/sprig"
 	"gopkg.in/yaml.v3"
@@ -36,8 +37,8 @@ type PipelineCreatedResource struct {
 
 type PipelineActionOutcome struct {
 	Variables       *PipelineVariables
-	OutputReader    io.Reader
-	ErrorReader     io.Reader
+	OutputBuffer    *bytes.Buffer
+	StderrBuffer    *bytes.Buffer
 	CreatedResource *PipelineCreatedResource
 	Error           error
 }
@@ -119,7 +120,7 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 			{
 				Variables:    pipelineVariables,
 				Error:        NewTemplateError(action.Descriptor, "failed to expand resource template: %s", err),
-				OutputReader: templateBuffer,
+				OutputBuffer: templateBuffer,
 			},
 		}
 	}
@@ -136,7 +137,7 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 	for _, yamlDocumentString := range yamlDocuments {
 		outcome := &PipelineActionOutcome{
 			Variables:    pipelineVariables,
-			OutputReader: strings.NewReader(yamlDocumentString),
+			OutputBuffer: bytes.NewBufferString(yamlDocumentString),
 		}
 
 		decoder := yaml.NewDecoder(strings.NewReader(yamlDocumentString))
@@ -171,6 +172,38 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 				return append(outcomes, outcome)
 			}
 
+			switch SimplifiedTypeFor(created) {
+			case "Pod":
+				client.WaitForPodRunningState(created, 60*time.Second)
+				if err != nil {
+					outcome.Error = NewResourceCreationError(
+						action.Descriptor,
+						&K8sResourceInformation{
+							Kind:          unstructured.GetKind(),
+							Name:          unstructured.GetName(),
+							NamespaceName: unstructured.GetNamespace(),
+						},
+						err.Error())
+					return append(outcomes, outcome)
+				}
+				// case "Job":
+				// 	j, err := UnstructuredToJobType(created)
+				// 	if err != nil {
+				// 		created, err = client.WaitForJobToComplete()
+				// 	}
+				// 	if err != nil {
+				// 		outcome.Error = NewResourceCreationError(
+				// 			action.Descriptor,
+				// 			&K8sResourceInformation{
+				// 				Kind:          unstructured.GetKind(),
+				// 				Name:          unstructured.GetName(),
+				// 				NamespaceName: unstructured.GetNamespace(),
+				// 			},
+				// 			err.Error())
+				// 		return append(outcomes, outcome)
+				// 	}
+			}
+
 			// created and unstructured are subtley different.  If unstructured used GenerateName in the metadata section, Name() will
 			// usually return the empty string (assuming it was not also set), but in this case, created.Name() would return the fully
 			// generated name.
@@ -201,16 +234,16 @@ func (action *PipelineAction) runValuesTransform(pipelineVariables *PipelineVari
 }
 
 func (outcome *PipelineActionOutcome) WriteOutputToFile(filePath string, fileModeIfFileIsCreated os.FileMode) error {
-	if outcome.OutputReader != nil {
-		return writeReaderToFile(filePath, fileModeIfFileIsCreated, outcome.OutputReader)
+	if outcome.OutputBuffer != nil {
+		return writeReaderToFile(filePath, fileModeIfFileIsCreated, outcome.OutputBuffer)
 	}
 
 	return nil
 }
 
 func (outcome *PipelineActionOutcome) WriteErrorToFile(filePath string, fileModeIfFileIsCreated os.FileMode) error {
-	if outcome.ErrorReader != nil {
-		writeReaderToFile(filePath, fileModeIfFileIsCreated, outcome.ErrorReader)
+	if outcome.StderrBuffer != nil {
+		writeReaderToFile(filePath, fileModeIfFileIsCreated, outcome.StderrBuffer)
 	}
 
 	return nil
@@ -218,7 +251,7 @@ func (outcome *PipelineActionOutcome) WriteErrorToFile(filePath string, fileMode
 }
 
 func writeReaderToFile(filePath string, fileModeIfFileIsCreated os.FileMode, reader io.Reader) error {
-	fileHandle, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC, fileModeIfFileIsCreated)
+	fileHandle, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fileModeIfFileIsCreated)
 	if err != nil {
 		return err
 	}
@@ -229,4 +262,13 @@ func writeReaderToFile(filePath string, fileModeIfFileIsCreated os.FileMode, rea
 	}
 
 	return nil
+}
+
+var gkvToSimplifiedType = map[gvkKey]string{
+	gvkKey("\tv1\tPod"):      "Pod",
+	gvkKey("batch\tv1\tJob"): "Job",
+}
+
+func SimplifiedTypeFor(u *unstructured.Unstructured) string {
+	return gkvToSimplifiedType[gvkKeyFromGroupVersionKind(u.GroupVersionKind())]
 }
