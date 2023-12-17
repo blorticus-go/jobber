@@ -239,7 +239,7 @@ func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *Pip
 		}
 
 		if outcome.Error == nil {
-			h.sayThatResourceCreationSucceeded(outcome.CreatedResource.Information, templateOutputFunc, testUnit, testCase)
+			h.sayThatResourceCreationSucceeded(outcome.CreatedResource.Information(), templateOutputFunc, testUnit, testCase)
 		} else {
 			switch typedError := outcome.Error.(type) {
 			case *TemplateError:

@@ -13,7 +13,6 @@ import (
 
 	"github.com/Masterminds/sprig"
 	"gopkg.in/yaml.v3"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type PipelineActionType int
@@ -30,16 +29,11 @@ type PipelineAction struct {
 	ActionFullyQualifiedPath string
 }
 
-type PipelineCreatedResource struct {
-	Information *K8sResourceInformation
-	ApiObject   *unstructured.Unstructured
-}
-
 type PipelineActionOutcome struct {
 	Variables       *PipelineVariables
 	OutputBuffer    *bytes.Buffer
 	StderrBuffer    *bytes.Buffer
-	CreatedResource *PipelineCreatedResource
+	CreatedResource *K8sUnstructuredResource
 	Error           error
 }
 
@@ -149,74 +143,32 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 		}
 
 		if len(decodedYaml) > 0 {
-			unstructured, err := client.MapToUnstructured(decodedYaml)
+			resource, err := NewK8sUnstructuredResourceFromMap(decodedYaml, client)
 			if err != nil {
 				outcome.Error = NewTemplateError(action.Descriptor, "expanded template yaml is not valid resource definition: %s", err)
 				return append(outcomes, outcome)
 			}
 
-			if unstructured.GetNamespace() == "" {
-				unstructured.SetNamespace(pipelineVariables.Config.Namespaces["Default"].GeneratedName)
+			if resource.GetNamespace() == "" {
+				resource.SetNamespace(pipelineVariables.Config.Namespaces["Default"].GeneratedName)
 			}
 
-			created, err := client.CreateResourceFromUnstructured(unstructured)
-			if err != nil {
-				outcome.Error = NewResourceCreationError(
-					action.Descriptor,
-					&K8sResourceInformation{
-						Kind:          unstructured.GetKind(),
-						Name:          unstructured.GetName(),
-						NamespaceName: unstructured.GetNamespace(),
-					},
-					err.Error())
+			if err := resource.Create(); err != nil {
+				outcome.Error = NewResourceCreationError(action.Descriptor, resource.Information(), err.Error())
 				return append(outcomes, outcome)
 			}
 
-			switch SimplifiedTypeFor(created) {
+			switch resource.SimplifiedTypeString() {
 			case "Pod":
-				client.WaitForPodRunningState(created, 60*time.Second)
-				if err != nil {
-					outcome.Error = NewResourceCreationError(
-						action.Descriptor,
-						&K8sResourceInformation{
-							Kind:          unstructured.GetKind(),
-							Name:          unstructured.GetName(),
-							NamespaceName: unstructured.GetNamespace(),
-						},
-						err.Error())
+				if err = client.WaitForPodRunningState(resource, 60*time.Second); err != nil {
+					outcome.Error = NewResourceCreationError(action.Descriptor, resource.Information(), err.Error())
 					return append(outcomes, outcome)
 				}
-				// case "Job":
-				// 	j, err := UnstructuredToJobType(created)
-				// 	if err != nil {
-				// 		created, err = client.WaitForJobToComplete()
-				// 	}
-				// 	if err != nil {
-				// 		outcome.Error = NewResourceCreationError(
-				// 			action.Descriptor,
-				// 			&K8sResourceInformation{
-				// 				Kind:          unstructured.GetKind(),
-				// 				Name:          unstructured.GetName(),
-				// 				NamespaceName: unstructured.GetNamespace(),
-				// 			},
-				// 			err.Error())
-				// 		return append(outcomes, outcome)
-				// 	}
 			}
 
-			// created and unstructured are subtley different.  If unstructured used GenerateName in the metadata section, Name() will
-			// usually return the empty string (assuming it was not also set), but in this case, created.Name() would return the fully
-			// generated name.
-			outcome.CreatedResource = &PipelineCreatedResource{
-				Information: &K8sResourceInformation{
-					Kind:          created.GetKind(),
-					Name:          created.GetName(),
-					NamespaceName: created.GetNamespace(),
-				},
-				ApiObject: created,
-			}
+			outcome.CreatedResource = resource
 
-			pipelineVariables.Runtime.Add(created)
+			pipelineVariables.Runtime.Add(resource.ApiObject())
 
 			outcomes = append(outcomes, outcome)
 		}
@@ -262,13 +214,4 @@ func writeReaderToFile(filePath string, fileModeIfFileIsCreated os.FileMode, rea
 	}
 
 	return nil
-}
-
-var gkvToSimplifiedType = map[gvkKey]string{
-	gvkKey("\tv1\tPod"):      "Pod",
-	gvkKey("batch\tv1\tJob"): "Job",
-}
-
-func SimplifiedTypeFor(u *unstructured.Unstructured) string {
-	return gkvToSimplifiedType[gvkKeyFromGroupVersionKind(u.GroupVersionKind())]
 }

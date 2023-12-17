@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/qdm12/reprint"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -46,13 +45,13 @@ func (values *PipelineRuntimeValues) CreatedAsset(group string, version string, 
 	return values.createdAssets[gvkKeyFromGVKStrings(group, version, kind)][resourceName(name)]
 }
 
-func (values *PipelineRuntimeValues) CreatedPod(podName string) (*corev1.Pod, error) {
-	if u := values.CreatedAsset("", "v1", "Pod", podName); u == nil {
-		return nil, fmt.Errorf("no created pod named (%s)", podName)
-	} else {
-		return UnstructuredToPodType(u)
-	}
-}
+// func (values *PipelineRuntimeValues) CreatedPod(podName string) (*corev1.Pod, error) {
+// 	if u := values.CreatedAsset("", "v1", "Pod", podName); u == nil {
+// 		return nil, fmt.Errorf("no created pod named (%s)", podName)
+// 	} else {
+// 		return UnstructuredToPodType(u)
+// 	}
+// }
 
 type PipelineVariables struct {
 	Values  map[string]any

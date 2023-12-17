@@ -3,7 +3,6 @@ package jobber
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -93,14 +92,22 @@ func (client *Client) CreateResourceFromUnstructured(instance *unstructured.Unst
 	gkvResource := schema.GroupVersionResource{
 		Group:    gkv.Group,
 		Version:  gkv.Version,
-		Resource: guessResourceFromKind(gkv.Kind),
+		Resource: GuessResourceFromKind(gkv.Kind),
 	}
 
 	return client.dynamicClient.Resource(gkvResource).Namespace(instance.GetNamespace()).Create(context.Background(), instance, metav1.CreateOptions{})
 }
 
-func guessResourceFromKind(kind string) string {
-	return fmt.Sprintf("%ss", strings.ToLower(kind))
+func (client *Client) UpdateStatusForUnstructured(instance *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+	gkv := instance.GroupVersionKind()
+
+	gkvResource := schema.GroupVersionResource{
+		Group:    gkv.Group,
+		Version:  gkv.Version,
+		Resource: GuessResourceFromKind(gkv.Kind),
+	}
+
+	return client.dynamicClient.Resource(gkvResource).Namespace(instance.GetNamespace()).Get(context.Background(), instance.GetName(), metav1.GetOptions{})
 }
 
 func (client *Client) DeleteResourceFromUnstructured(instance *unstructured.Unstructured) error {
@@ -109,16 +116,20 @@ func (client *Client) DeleteResourceFromUnstructured(instance *unstructured.Unst
 	gkvResource := schema.GroupVersionResource{
 		Group:    gkv.Group,
 		Version:  gkv.Version,
-		Resource: guessResourceFromKind(gkv.Kind),
+		Resource: GuessResourceFromKind(gkv.Kind),
 	}
 
 	return client.dynamicClient.Resource(gkvResource).Namespace(instance.GetNamespace()).Delete(context.Background(), instance.GetName(), defaultResourceDeletionOptions)
 }
 
-func (client *Client) WaitForPodRunningState(unstructuredPod *unstructured.Unstructured, amountOfTimeToWait time.Duration) (updatedUnstructuredPod *unstructured.Unstructured, err error) {
-	podApiObject, err := UnstructuredToPodType(unstructuredPod)
-	if err != nil {
-		return nil, err
+func (client *Client) WaitForPodRunningState(pod *K8sUnstructuredResource, amountOfTimeToWait time.Duration) error {
+	if pod.GetObjectKind().GroupVersionKind().Kind != "Pod" {
+		return fmt.Errorf("incorrect Kind (%s), is not a (Pod)", pod.GetObjectKind().GroupVersionKind().Kind)
+	}
+
+	var podApiObject corev1.Pod
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(pod.UnstructuredMap(), &podApiObject); err != nil {
+		return err
 	}
 
 	t := &WaitTimer{
@@ -126,35 +137,7 @@ func (client *Client) WaitForPodRunningState(unstructuredPod *unstructured.Unstr
 		ProbeInterval:     time.Second,
 	}
 
-	err = t.TestExpectation(
-		podApiObject,
-		func(kao K8sApiObject) (K8sApiObject, error) {
-			return client.clientSet.CoreV1().Pods(kao.GetNamespace()).Get(context.Background(), kao.GetName(), metav1.GetOptions{})
-		},
-		func(kao K8sApiObject) (expectationReached bool, errorOccurred error) {
-			return (kao != nil && kao.(*corev1.Pod).Status.Phase == corev1.PodRunning), nil
-		})
-
-	if err != nil {
-		return unstructuredPod, err
-	}
-
-	uMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(podApiObject)
-	if err != nil {
-		return unstructuredPod, err
-	}
-
-	return &unstructured.Unstructured{
-		Object: uMap,
-	}, nil
-}
-
-func UnstructuredToPodType(u *unstructured.Unstructured) (*corev1.Pod, error) {
-	typed := new(corev1.Pod)
-
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, typed); err != nil {
-		return nil, err
-	}
-
-	return typed, nil
+	return t.TestExpectation(pod, func(kr K8sResource) (expectationReached bool, errorOccurred error) {
+		return (kr != nil && podApiObject.Status.Phase == corev1.PodRunning), nil
+	})
 }
