@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/blorticus-go/jobber/resource"
 )
 
 type WaitTimer struct {
@@ -20,16 +22,16 @@ func NewWaitTimer(maximumTimetoWait time.Duration, probeInterval time.Duration) 
 
 var ErrorTimeExceeded = fmt.Errorf("time limit exceeded")
 
-type WaitTimerExpectationFunction func(K8sResource) (expectationReached bool, errorOccurred error)
+type WaitTimerExpectationFunction func(resource.Type) (expectationReached bool, errorOccurred error)
 
-func (t *WaitTimer) TestExpectation(againstResource K8sResource, expectationFunc WaitTimerExpectationFunction) (err error) {
+func (t *WaitTimer) TestExpectation(againstResource resource.Type, expectationFunc WaitTimerExpectationFunction) (err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), t.MaximumTimeToWait)
 	defer cancel()
 
 	ticker := time.NewTicker(t.ProbeInterval)
 
 	if err := againstResource.UpdateStatus(); err != nil {
-		return fmt.Errorf("could not update status for %s (%s): %s", againstResource.GetObjectKind().GroupVersionKind().Kind, againstResource.GetName(), err)
+		return fmt.Errorf("could not update status for %s (%s): %s", againstResource.GroupVersionKind().Kind, againstResource.Name(), err)
 	}
 
 	for {
@@ -42,7 +44,7 @@ func (t *WaitTimer) TestExpectation(againstResource K8sResource, expectationFunc
 		select {
 		case <-ticker.C:
 			if err = againstResource.UpdateStatus(); err != nil {
-				return fmt.Errorf("could not update status for %s (%s): %s", againstResource.GetObjectKind().GroupVersionKind().Kind, againstResource.GetName(), err)
+				return fmt.Errorf("could not update status for %s (%s): %s", againstResource.GroupVersionKind().Kind, againstResource.GetName(), err)
 			}
 
 		case <-ctx.Done():
