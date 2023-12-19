@@ -56,6 +56,9 @@ const (
 	PipelineDefinitionIsInvalid
 	AssetDirectoryCreatedSuccessfully
 	AssetDirectoryCreationFailed
+	WaitingForPodToReachRunningState
+	WaitingForJobToComplete
+	JobFailedToComplete
 )
 
 type ResourceEvent struct {
@@ -246,6 +249,8 @@ func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *Pip
 				h.sayThatResourceTemplateExpansionFailed(typedError.TemplateName, templateOutputFunc, typedError, testUnit, testCase)
 			case *ResourceCreationError:
 				h.sayThatResourceCreationFailed(typedError.ResourceInformation, templateOutputFunc, typedError, testUnit, testCase)
+			case *JobCompletionFailureError:
+				h.sayThatJobFailedToComplete(typedError.ResourceInformation, typedError, testUnit, testCase)
 			}
 		}
 
@@ -260,6 +265,14 @@ func (handler *eventHandler) sayThatAssetDirectoryCreationFailed(path string, er
 		FileEvent: &FileEvent{
 			Path: path,
 		},
+		Error:   err,
+		Context: EventContextFor(testUnit, testCase),
+	}
+}
+
+func (handler *eventHandler) sayThatJobFailedToComplete(resourceInformation *K8sResourceInformation, err error, testUnit *TestUnit, testCase *TestCase) {
+	handler.eventChannel <- &Event{
+		Type:    JobFailedToComplete,
 		Error:   err,
 		Context: EventContextFor(testUnit, testCase),
 	}

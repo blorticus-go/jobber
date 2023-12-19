@@ -33,7 +33,7 @@ type PipelineActionOutcome struct {
 	Variables       *PipelineVariables
 	OutputBuffer    *bytes.Buffer
 	StderrBuffer    *bytes.Buffer
-	CreatedResource *K8sUnstructuredResource
+	CreatedResource *GenericK8sResource
 	Error           error
 }
 
@@ -143,13 +143,13 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 		}
 
 		if len(decodedYaml) > 0 {
-			resource, err := NewK8sUnstructuredResourceFromMap(decodedYaml, client)
+			resource, err := NewGenericK8sResourceFromUnstructuredMap(decodedYaml, client)
 			if err != nil {
 				outcome.Error = NewTemplateError(action.Descriptor, "expanded template yaml is not valid resource definition: %s", err)
 				return append(outcomes, outcome)
 			}
 
-			if resource.GetNamespace() == "" {
+			if resource.NamespaceName() == "" {
 				resource.SetNamespace(pipelineVariables.Config.Namespaces["Default"].GeneratedName)
 			}
 
@@ -160,15 +160,23 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 
 			switch resource.SimplifiedTypeString() {
 			case "Pod":
-				if err = client.WaitForPodRunningState(resource, 60*time.Second); err != nil {
+				if err = resource.AsAPod().WaitForRunningState(60 * time.Second); err != nil {
+					if err == ErrorTimeExceeded {
+						err = fmt.Errorf("timed out waiting for Running state")
+					}
 					outcome.Error = NewResourceCreationError(action.Descriptor, resource.Information(), err.Error())
+					return append(outcomes, outcome)
+				}
+			case "Job":
+				if err = resource.AsAJob().WaitForCompletion(); err != nil {
+					outcome.Error = NewJobCompletionFailureError(resource.Information(), err.Error())
 					return append(outcomes, outcome)
 				}
 			}
 
 			outcome.CreatedResource = resource
 
-			pipelineVariables.Runtime.Add(resource.ApiObject())
+			pipelineVariables.Runtime.Add(resource)
 
 			outcomes = append(outcomes, outcome)
 		}

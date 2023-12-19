@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/qdm12/reprint"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -20,38 +19,38 @@ func gvkKeyFromGVKStrings(group, version, kind string) gvkKey {
 }
 
 type PipelineRuntimeValues struct {
-	createdAssets map[gvkKey]map[resourceName]*unstructured.Unstructured
+	createdAssets map[gvkKey]map[resourceName]*GenericK8sResource
 }
 
 func NewEmptyPipelineRuntimeValues() *PipelineRuntimeValues {
 	return &PipelineRuntimeValues{
-		createdAssets: make(map[gvkKey]map[resourceName]*unstructured.Unstructured),
+		createdAssets: make(map[gvkKey]map[resourceName]*GenericK8sResource),
 	}
 }
 
-func (values *PipelineRuntimeValues) Add(u *unstructured.Unstructured) *PipelineRuntimeValues {
-	key := gvkKeyFromGroupVersionKind(u.GroupVersionKind())
+func (values *PipelineRuntimeValues) Add(resource *GenericK8sResource) *PipelineRuntimeValues {
+	key := gvkKeyFromGroupVersionKind(resource.ApiObject().GroupVersionKind())
 
 	if values.createdAssets[key] == nil {
-		values.createdAssets[key] = make(map[resourceName]*unstructured.Unstructured)
+		values.createdAssets[key] = make(map[resourceName]*GenericK8sResource)
 	}
 
-	values.createdAssets[key][resourceName(u.GetName())] = u
+	values.createdAssets[key][resourceName(resource.Name)] = resource
 
 	return values
 }
 
-func (values *PipelineRuntimeValues) CreatedAsset(group string, version string, kind string, name string) *unstructured.Unstructured {
+func (values *PipelineRuntimeValues) CreatedAsset(group string, version string, kind string, name string) *GenericK8sResource {
 	return values.createdAssets[gvkKeyFromGVKStrings(group, version, kind)][resourceName(name)]
 }
 
-// func (values *PipelineRuntimeValues) CreatedPod(podName string) (*corev1.Pod, error) {
-// 	if u := values.CreatedAsset("", "v1", "Pod", podName); u == nil {
-// 		return nil, fmt.Errorf("no created pod named (%s)", podName)
-// 	} else {
-// 		return UnstructuredToPodType(u)
-// 	}
-// }
+func (values *PipelineRuntimeValues) CreatedPod(podName string) (*TransitivePod, error) {
+	if resource := values.CreatedAsset("", "v1", "Pod", podName); resource == nil {
+		return nil, fmt.Errorf("no created pod named (%s)", podName)
+	} else {
+		return resource.AsAPod(), nil
+	}
+}
 
 type PipelineVariables struct {
 	Values  map[string]any

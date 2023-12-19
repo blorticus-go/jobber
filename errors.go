@@ -18,6 +18,11 @@ type FileOrDirectoryCreationError struct {
 	errorText string
 }
 
+type JobCompletionFailureError struct {
+	errorText           string
+	ResourceInformation *K8sResourceInformation
+}
+
 func NewTemplateError(templateName string, errorStringFormat string, a ...any) *TemplateError {
 	return &TemplateError{
 		TemplateName: templateName,
@@ -39,6 +44,13 @@ func NewFileOrDirectoryCreationError(path string, errorStringFormat string, a ..
 	}
 }
 
+func NewJobCompletionFailureError(resourceInformation *K8sResourceInformation, errorStringFormat string, a ...any) *JobCompletionFailureError {
+	return &JobCompletionFailureError{
+		ResourceInformation: resourceInformation,
+		errorText:           fmt.Sprintf(errorStringFormat, a...),
+	}
+}
+
 func (e *TemplateError) Error() string {
 	return e.errorText
 }
@@ -48,5 +60,9 @@ func (e *ResourceCreationError) Error() string {
 }
 
 func (e *FileOrDirectoryCreationError) Error() string {
+	return e.errorText
+}
+
+func (e *JobCompletionFailureError) Error() string {
 	return e.errorText
 }

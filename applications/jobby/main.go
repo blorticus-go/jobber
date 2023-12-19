@@ -4,13 +4,6 @@ import (
 	"github.com/blorticus-go/jobber"
 )
 
-var ns string = `---
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: TestNamespace
-`
-
 func main() {
 	logger := NewLogger()
 

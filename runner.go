@@ -104,7 +104,7 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 						runner.resourceTracker.AddCreatedResource(&DeletableK8sResource{
 							information: (outcome.CreatedResource.Information()),
 							deletionMethod: func(object any) error {
-								return runner.client.DeleteResourceFromUnstructured(outcome.CreatedResource.ApiObject())
+								return object.(*GenericK8sResource).Delete()
 							},
 						})
 					}

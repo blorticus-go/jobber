@@ -2,8 +2,6 @@ package jobber
 
 import (
 	"fmt"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 type CustomerTemplateFunctions struct {
@@ -29,10 +27,10 @@ func JobberTemplateFunctions() map[string]any {
 	return templateFunctions.fmap
 }
 
-func TemplateFunc_PodIPString(pod *corev1.Pod) (string, error) {
-	if pod == nil {
+func TemplateFunc_PodIPString(resource *TransitivePod) (string, error) {
+	if resource == nil {
 		return "", fmt.Errorf("pod not found")
 	}
 
-	return pod.Status.PodIP, nil
+	return resource.IpString()
 }

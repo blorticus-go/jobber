@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/blorticus-go/jobber/resource"
 )
+
+type Updatable interface {
+	UpdateStatus() error
+}
 
 type WaitTimer struct {
 	MaximumTimeToWait time.Duration
@@ -22,20 +24,20 @@ func NewWaitTimer(maximumTimetoWait time.Duration, probeInterval time.Duration) 
 
 var ErrorTimeExceeded = fmt.Errorf("time limit exceeded")
 
-type WaitTimerExpectationFunction func(resource.Type) (expectationReached bool, errorOccurred error)
+type WaitTimerExpectationFunction func(objectToTest Updatable) (expectationReached bool, errorOccurred error)
 
-func (t *WaitTimer) TestExpectation(againstResource resource.Type, expectationFunc WaitTimerExpectationFunction) (err error) {
+func (t *WaitTimer) TestExpectation(againstObject Updatable, expectationFunc WaitTimerExpectationFunction) (err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), t.MaximumTimeToWait)
 	defer cancel()
 
 	ticker := time.NewTicker(t.ProbeInterval)
 
-	if err := againstResource.UpdateStatus(); err != nil {
-		return fmt.Errorf("could not update status for %s (%s): %s", againstResource.GroupVersionKind().Kind, againstResource.Name(), err)
+	if err := againstObject.UpdateStatus(); err != nil {
+		return fmt.Errorf("could not update status: %s", err)
 	}
 
 	for {
-		if expectationReached, err := expectationFunc(againstResource); expectationReached {
+		if expectationReached, err := expectationFunc(againstObject); expectationReached {
 			return nil
 		} else if err != nil {
 			return err
@@ -43,8 +45,8 @@ func (t *WaitTimer) TestExpectation(againstResource resource.Type, expectationFu
 
 		select {
 		case <-ticker.C:
-			if err = againstResource.UpdateStatus(); err != nil {
-				return fmt.Errorf("could not update status for %s (%s): %s", againstResource.GroupVersionKind().Kind, againstResource.GetName(), err)
+			if err = againstObject.UpdateStatus(); err != nil {
+				return fmt.Errorf("could not update status: %s", err)
 			}
 
 		case <-ctx.Done():

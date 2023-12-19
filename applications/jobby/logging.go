@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/blorticus-go/jobber"
 )
@@ -109,9 +108,11 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 		} else {
 			l.SayContextually(event.Context, "Failed to create directory [%s]: %s", event.FileEvent.Path, event.Error)
 		}
+	case jobber.WaitingForJobToComplete:
+		l.SayContextually(event.Context, "Waiting for Job [%s] to complete", event.ResourceInformation.ResourceDetails.Name)
+	case jobber.WaitingForPodToReachRunningState:
+		l.SayContextually(event.Context, "Waiting for Pod [%s] to reach Running state", event.ResourceInformation.ResourceDetails.Name)
+	case jobber.JobFailedToComplete:
+		l.SayContextually(event.Context, "Job [%s] failed: %s", event.ResourceInformation.ResourceDetails.Name, event.Error)
 	}
-}
-
-func justTheTargetFrom(typeAndTarget string) string {
-	return (strings.Split(typeAndTarget, "/"))[1]
 }
