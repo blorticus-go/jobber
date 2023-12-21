@@ -2,9 +2,11 @@ package jobber
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -186,7 +188,41 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 }
 
 func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables) []*PipelineActionOutcome {
-	return nil
+	cmdStdout := new(bytes.Buffer)
+	cmdStderr := new(bytes.Buffer)
+
+	cmd := exec.Command(action.ActionFullyQualifiedPath)
+	cmd.Stdout = cmdStdout
+	cmd.Stderr = cmdStderr
+
+	outcome := &PipelineActionOutcome{
+		Variables:    pipelineVariables,
+		OutputBuffer: cmdStdout,
+		StderrBuffer: cmdStderr,
+	}
+
+	jsonBytes, err := json.Marshal(pipelineVariables)
+	if err != nil {
+		outcome.Error = fmt.Errorf("failed to marshall variables to json: %s", err)
+		return []*PipelineActionOutcome{outcome}
+	}
+
+	stdinWritePipe, err := cmd.StdinPipe()
+	if err != nil {
+		outcome.Error = fmt.Errorf("could not connect stdin pipe: %s", err)
+		return []*PipelineActionOutcome{outcome}
+	}
+
+	go func() {
+		defer stdinWritePipe.Close()
+		stdinWritePipe.Write(jsonBytes)
+	}()
+
+	if err := cmd.Run(); err != nil {
+		outcome.Error = err
+	}
+
+	return []*PipelineActionOutcome{outcome}
 }
 
 func (action *PipelineAction) runValuesTransform(pipelineVariables *PipelineVariables) []*PipelineActionOutcome {

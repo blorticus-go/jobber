@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -14,8 +13,15 @@ type TemplateExpansionNamespace struct {
 	GeneratedName string
 }
 
+type VariablesConfigContext struct {
+	TestUnitName                         string
+	TestCaseName                         string
+	TestCaseRetrievedAssetsDirectoryPath string
+}
+
 type TemplateExpansionConfigVariables struct {
 	DefaultNamespace *TemplateExpansionNamespace
+	Context          *VariablesConfigContext
 }
 
 type Runner struct {
@@ -52,39 +58,6 @@ func (runner *Runner) createDefaultNamespace() (*corev1.Namespace, error) {
 	return defaultNamespaceApiObject, nil
 }
 
-func mkdirRecursively(path string) error {
-	cleanAbsolutePath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("cannot resolve absolute path from (%s): %s", path, err)
-	}
-
-	if strings.HasPrefix(cleanAbsolutePath, "//") {
-		return fmt.Errorf("cannot process Windows style machine paths (i.e., those starting with //) on path (%s)", path)
-	}
-
-	pathElements := strings.Split(filepath.ToSlash(cleanAbsolutePath), "/")
-
-	if len(pathElements) == 1 {
-		return fmt.Errorf("will not attempt to make directory (/)")
-	}
-
-	for i := 1; i < len(pathElements); i++ {
-		subPath := filepath.FromSlash(strings.Join(pathElements[:i+1], "/"))
-		_, err := os.Stat(subPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				if err := os.Mkdir(subPath, os.FileMode(0775)); err != nil {
-					return fmt.Errorf("failed to create directory (%s): %s", subPath, err)
-				}
-			} else {
-				return fmt.Errorf("could not stat directory (%s): %s", subPath, err)
-			}
-		}
-	}
-
-	return nil
-}
-
 func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	eventHandler := &eventHandler{eventChannel}
 	assetsDirectoryManager := NewContextualAssetsDirectoryManager()
@@ -92,22 +65,6 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	outcome := assetsDirectoryManager.CreateTestAssetsRootDirectory()
 	if eventHandler.explainAssetCreationOutcome(outcome, nil, nil); outcome.DirectoryCreationFailureError != nil {
 		return
-	}
-
-	if err := mkdirRecursively(runner.config.Test.Definition.TestAssetRepositoryRootPath); err != nil {
-		eventHandler.eventChannel <- &Event{
-			Type: AssetDirectoryCreationFailed,
-			FileEvent: &FileEvent{
-				Path: runner.config.Test.Definition.TestAssetRepositoryRootPath,
-			},
-		}
-	} else {
-		eventHandler.eventChannel <- &Event{
-			Type: AssetDirectoryCreatedSuccessfully,
-			FileEvent: &FileEvent{
-				Path: runner.config.Test.Definition.TestAssetRepositoryRootPath,
-			},
-		}
 	}
 
 	templateExpansionVariables := NewPipelineVariablesWithSeedValues(runner.config.Test.Definition.DefaultValues, runner.client)
@@ -134,6 +91,12 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 			outcome := assetsDirectoryManager.CreateTestCaseDirectories(testUnit, testCase)
 			if eventHandler.explainAssetCreationOutcome(outcome, testUnit, testCase); outcome.DirectoryCreationFailureError != nil {
 				return
+			}
+
+			templateExpansionVariables.Config.Context = &VariablesConfigContext{
+				TestUnitName:                         testUnit.Name,
+				TestCaseName:                         testCase.Name,
+				TestCaseRetrievedAssetsDirectoryPath: assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase).RetrievedAssets,
 			}
 
 			nsObject, err := runner.createDefaultNamespace()

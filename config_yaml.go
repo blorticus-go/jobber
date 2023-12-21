@@ -14,11 +14,10 @@ type ConfigurationNamespace struct {
 }
 
 type ConfigurationDefinition struct {
-	DefaultValues               map[string]any          `yaml:"DefaultValues"`
-	DefaultNamespace            *ConfigurationNamespace `yaml:"DefaultNamespace"`
-	PipelineRootDirectory       string                  `yaml:"PipelineRootDirectory"`
-	Pipeline                    []string                `yaml:"Pipeline"`
-	TestAssetRepositoryRootPath string                  `yaml:"TestAssetRepositoryRootPath"`
+	DefaultValues         map[string]any          `yaml:"DefaultValues"`
+	DefaultNamespace      *ConfigurationNamespace `yaml:"DefaultNamespace"`
+	PipelineRootDirectory string                  `yaml:"PipelineRootDirectory"`
+	Pipeline              []string                `yaml:"Pipeline"`
 }
 
 type TestCase struct {

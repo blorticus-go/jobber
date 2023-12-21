@@ -222,6 +222,39 @@ func (h *eventHandler) explainAttemptToCreateDefaultNamespace(generatedNameBase 
 	}
 }
 
+func (h *eventHandler) sayThatExecutionFailed(actionId string, outcome *PipelineActionOutcome, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type:    ExecutableRunFailure,
+		Context: EventContextFor(testUnit, testCase),
+		ExecuableInformation: &ExecutableEvent{
+			ExecutableName: actionId,
+			StdoutOutputRetriever: func() string {
+				return outcome.OutputBuffer.String()
+			},
+			StderrOutputRetriever: func() string {
+				return outcome.StderrBuffer.String()
+			},
+		},
+		Error: outcome.Error,
+	}
+}
+
+func (h *eventHandler) sayThatExecutionSucceeded(actionId string, outcome *PipelineActionOutcome, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type:    ExecutableRunSuccess,
+		Context: EventContextFor(testUnit, testCase),
+		ExecuableInformation: &ExecutableEvent{
+			ExecutableName: actionId,
+			StdoutOutputRetriever: func() string {
+				return outcome.OutputBuffer.String()
+			},
+			StderrOutputRetriever: func() string {
+				return outcome.StderrBuffer.String()
+			},
+		},
+	}
+}
+
 func (h *eventHandler) sayThatPipelineDefinitionIsInvalid(err error) {
 	h.eventChannel <- &Event{
 		Type:    PipelineDefinitionIsInvalid,
@@ -256,6 +289,11 @@ func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *Pip
 
 	case ValuesTransform:
 	case Executable:
+		if outcome.Error != nil {
+			h.sayThatExecutionFailed(action.Descriptor, outcome, testUnit, testCase)
+		} else {
+			h.sayThatExecutionSucceeded(action.Descriptor, outcome, testUnit, testCase)
+		}
 	}
 }
 
