@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +15,7 @@ type TemplateExpansionNamespace struct {
 }
 
 type TemplateExpansionConfigVariables struct {
-	Namespaces map[string]*TemplateExpansionNamespace
+	DefaultNamespace *TemplateExpansionNamespace
 }
 
 type Runner struct {
@@ -32,7 +33,7 @@ func NewRunner(config *Configuration, client *Client) *Runner {
 }
 
 func (runner *Runner) createDefaultNamespace() (*corev1.Namespace, error) {
-	defaultNamespaceApiObject, err := runner.client.CreateNamespaceUsingGeneratedName(runner.config.Test.Definition.Namespaces["Default"].Basename)
+	defaultNamespaceApiObject, err := runner.client.CreateNamespaceUsingGeneratedName(runner.config.Test.Definition.DefaultNamespace.Basename)
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +52,39 @@ func (runner *Runner) createDefaultNamespace() (*corev1.Namespace, error) {
 	return defaultNamespaceApiObject, nil
 }
 
+func mkdirRecursively(path string) error {
+	cleanAbsolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("cannot resolve absolute path from (%s): %s", path, err)
+	}
+
+	if strings.HasPrefix(cleanAbsolutePath, "//") {
+		return fmt.Errorf("cannot process Windows style machine paths (i.e., those starting with //) on path (%s)", path)
+	}
+
+	pathElements := strings.Split(filepath.ToSlash(cleanAbsolutePath), "/")
+
+	if len(pathElements) == 1 {
+		return fmt.Errorf("will not attempt to make directory (/)")
+	}
+
+	for i := 1; i < len(pathElements); i++ {
+		subPath := filepath.FromSlash(strings.Join(pathElements[:i+1], "/"))
+		_, err := os.Stat(subPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				if err := os.Mkdir(subPath, os.FileMode(0775)); err != nil {
+					return fmt.Errorf("failed to create directory (%s): %s", subPath, err)
+				}
+			} else {
+				return fmt.Errorf("could not stat directory (%s): %s", subPath, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	eventHandler := &eventHandler{eventChannel}
 	assetsDirectoryManager := NewContextualAssetsDirectoryManager()
@@ -60,7 +94,23 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 		return
 	}
 
-	templateExpansionVariables := NewPipelineVariablesWithSeedValues(runner.config.Test.Definition.DefaultValues)
+	if err := mkdirRecursively(runner.config.Test.Definition.TestAssetRepositoryRootPath); err != nil {
+		eventHandler.eventChannel <- &Event{
+			Type: AssetDirectoryCreationFailed,
+			FileEvent: &FileEvent{
+				Path: runner.config.Test.Definition.TestAssetRepositoryRootPath,
+			},
+		}
+	} else {
+		eventHandler.eventChannel <- &Event{
+			Type: AssetDirectoryCreatedSuccessfully,
+			FileEvent: &FileEvent{
+				Path: runner.config.Test.Definition.TestAssetRepositoryRootPath,
+			},
+		}
+	}
+
+	templateExpansionVariables := NewPipelineVariablesWithSeedValues(runner.config.Test.Definition.DefaultValues, runner.client)
 
 	testCasePipeline, err := NewPipelineFromStringDescriptors(runner.config.Test.Definition.Pipeline, runner.config.Test.Definition.PipelineRootDirectory)
 	if err != nil {
@@ -87,11 +137,11 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 			}
 
 			nsObject, err := runner.createDefaultNamespace()
-			if eventHandler.explainAttemptToCreateDefaultNamespace(runner.config.Test.Definition.Namespaces["Default"].Basename, nsObject, EventContextFor(testUnit, testCase), err); err != nil {
+			if eventHandler.explainAttemptToCreateDefaultNamespace(runner.config.Test.Definition.DefaultNamespace.Basename, nsObject, EventContextFor(testUnit, testCase), err); err != nil {
 				return
 			}
 
-			templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testUnit.Values).AddNamespaceToConfig("Default", nsObject.Name)
+			templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testUnit.Values).AddDefaultNamespaceToConfig(nsObject.Name)
 
 			for action := testCasePipeline.Restart(); action != nil; action = testCasePipeline.NextAction() {
 				for _, outcome := range action.Run(templateExpansionVariables, runner.client) {

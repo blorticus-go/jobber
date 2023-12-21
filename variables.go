@@ -1,9 +1,11 @@
 package jobber
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/qdm12/reprint"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -20,11 +22,13 @@ func gvkKeyFromGVKStrings(group, version, kind string) gvkKey {
 
 type PipelineRuntimeValues struct {
 	createdAssets map[gvkKey]map[resourceName]*GenericK8sResource
+	client        *Client
 }
 
-func NewEmptyPipelineRuntimeValues() *PipelineRuntimeValues {
+func NewEmptyPipelineRuntimeValues(client *Client) *PipelineRuntimeValues {
 	return &PipelineRuntimeValues{
 		createdAssets: make(map[gvkKey]map[resourceName]*GenericK8sResource),
+		client:        client,
 	}
 }
 
@@ -52,24 +56,36 @@ func (values *PipelineRuntimeValues) CreatedPod(podName string) (*TransitivePod,
 	}
 }
 
+func (values *PipelineRuntimeValues) ServiceAccount(inNamespace string, accountName string) (*TransitiveServiceAccount, error) {
+	apiObject, err := values.client.Set().CoreV1().ServiceAccounts(inNamespace).Get(context.Background(), accountName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &TransitiveServiceAccount{
+		apiObject: apiObject,
+		client:    values.client,
+	}, nil
+}
+
 type PipelineVariables struct {
 	Values  map[string]any
 	Config  *TemplateExpansionConfigVariables
 	Runtime *PipelineRuntimeValues
 }
 
-func NewEmptyPipelineVariables() *PipelineVariables {
+func NewEmptyPipelineVariables(client *Client) *PipelineVariables {
 	return &PipelineVariables{
 		Values: make(map[string]any),
 		Config: &TemplateExpansionConfigVariables{
-			Namespaces: make(map[string]*TemplateExpansionNamespace),
+			DefaultNamespace: &TemplateExpansionNamespace{},
 		},
-		Runtime: NewEmptyPipelineRuntimeValues(),
+		Runtime: NewEmptyPipelineRuntimeValues(client),
 	}
 }
 
-func NewPipelineVariablesWithSeedValues(seedValues map[string]any) *PipelineVariables {
-	p := NewEmptyPipelineVariables()
+func NewPipelineVariablesWithSeedValues(seedValues map[string]any, client *Client) *PipelineVariables {
+	p := NewEmptyPipelineVariables(client)
 
 	for key, value := range seedValues {
 		p.Values[key] = reprint.This(value)
@@ -82,8 +98,8 @@ func (v *PipelineVariables) DeepCopy() *PipelineVariables {
 	return reprint.This(v).(*PipelineVariables)
 }
 
-func (v *PipelineVariables) AddNamespaceToConfig(namespaceLabel string, namespaceName string) *PipelineVariables {
-	v.Config.Namespaces[namespaceLabel] = &TemplateExpansionNamespace{GeneratedName: namespaceName}
+func (v *PipelineVariables) AddDefaultNamespaceToConfig(generatedNamespaceName string) *PipelineVariables {
+	v.Config.DefaultNamespace = &TemplateExpansionNamespace{GeneratedName: generatedNamespaceName}
 	return v
 }
 

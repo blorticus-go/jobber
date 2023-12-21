@@ -16,6 +16,7 @@ func init() {
 	}
 
 	templateFunctions.Add("pod_ip_string", TemplateFunc_PodIPString)
+	templateFunctions.Add("bound_bearer_token", TemplateFunc_NewBoundBearerToken)
 }
 
 func (t *CustomerTemplateFunctions) Add(functionName string, function any) *CustomerTemplateFunctions {
@@ -33,4 +34,8 @@ func TemplateFunc_PodIPString(resource *TransitivePod) (string, error) {
 	}
 
 	return resource.IpString()
+}
+
+func TemplateFunc_NewBoundBearerToken(forServiceAccount *TransitiveServiceAccount) (tokenAsAString string, err error) {
+	return forServiceAccount.GenerateBoundBearerTokenString()
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	authenticationv1 "k8s.io/api/authentication/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,6 +149,11 @@ type TransitiveJob struct {
 	client          *Client
 }
 
+type TransitiveServiceAccount struct {
+	apiObject *corev1.ServiceAccount
+	client    *Client
+}
+
 func (resource *GenericK8sResource) AsAPod() *TransitivePod {
 	return &TransitivePod{
 		genericResource: resource,
@@ -231,4 +237,18 @@ func (job *TransitiveJob) WaitForCompletion() error {
 			return fmt.Errorf("[%d] Pods for the Job failed", jobApiObject.Status.Failed)
 		}
 	}
+}
+
+func (sa *TransitiveServiceAccount) GenerateBoundBearerTokenString() (string, error) {
+	tokenRequest, err := sa.client.Set().CoreV1().ServiceAccounts(sa.apiObject.Namespace).CreateToken(context.Background(), sa.apiObject.Name, &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			Audiences: []string{"api", "https://kubernetes.default.svc"},
+		},
+	}, metav1.CreateOptions{})
+
+	if err != nil {
+		return "", err
+	}
+
+	return tokenRequest.Status.Token, nil
 }

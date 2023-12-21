@@ -150,7 +150,7 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 			}
 
 			if resource.NamespaceName() == "" {
-				resource.SetNamespace(pipelineVariables.Config.Namespaces["Default"].GeneratedName)
+				resource.SetNamespace(pipelineVariables.Config.DefaultNamespace.GeneratedName)
 			}
 
 			if err := resource.Create(); err != nil {

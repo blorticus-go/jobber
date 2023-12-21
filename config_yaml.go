@@ -14,10 +14,11 @@ type ConfigurationNamespace struct {
 }
 
 type ConfigurationDefinition struct {
-	DefaultValues         map[string]any                     `yaml:"DefaultValues"`
-	Namespaces            map[string]*ConfigurationNamespace `yaml:"Namespaces"`
-	PipelineRootDirectory string                             `yaml:"PipelineRootDirectory"`
-	Pipeline              []string                           `yaml:"Pipeline"`
+	DefaultValues               map[string]any          `yaml:"DefaultValues"`
+	DefaultNamespace            *ConfigurationNamespace `yaml:"DefaultNamespace"`
+	PipelineRootDirectory       string                  `yaml:"PipelineRootDirectory"`
+	Pipeline                    []string                `yaml:"Pipeline"`
+	TestAssetRepositoryRootPath string                  `yaml:"TestAssetRepositoryRootPath"`
 }
 
 type TestCase struct {
@@ -57,12 +58,12 @@ func (c *Configuration) validate() error {
 		return fmt.Errorf(".Test.Definition must exist")
 	}
 
-	if c.Test.Definition.Namespaces == nil {
-		return fmt.Errorf(".Test.Definition.Namepsaces must define at least the 'Default' namespace")
+	if c.Test.Definition.DefaultNamespace == nil {
+		return fmt.Errorf(".Test.Definition.DefaultNamespace must be defined")
 	}
 
-	if _, keyIsInMap := c.Test.Definition.Namespaces["Default"]; !keyIsInMap {
-		return fmt.Errorf(".Test.Definition.Namepsaces must define at least the 'Default' namespace")
+	if c.Test.Definition.DefaultNamespace.Basename == "" {
+		return fmt.Errorf(".Test.Definition.DefaultNamespace.Basename cannot be the empty string")
 	}
 
 	if c.Test.Definition.Pipeline == nil || len(c.Test.Definition.Pipeline) == 0 {

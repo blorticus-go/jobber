@@ -9,12 +9,12 @@ import (
 )
 
 func TestVariablesBase(t *testing.T) {
-	v := jobber.NewEmptyPipelineVariables()
+	v := jobber.NewEmptyPipelineVariables(nil)
 
 	expectedStructureWhenEmpty := &jobber.PipelineVariables{
 		Values: map[string]any{},
 		Config: &jobber.TemplateExpansionConfigVariables{
-			Namespaces: map[string]*jobber.TemplateExpansionNamespace{},
+			DefaultNamespace: &jobber.TemplateExpansionNamespace{},
 		},
 		Runtime: &jobber.PipelineRuntimeValues{},
 	}
@@ -34,22 +34,20 @@ func TestVariablesBase(t *testing.T) {
 	if reflect.ValueOf(v.Values).Pointer() == reflect.ValueOf(c.Values).Pointer() {
 		t.Errorf("on DeepCopy() .Values pointers should not be equal, but they are")
 	}
-	if reflect.ValueOf(v.Config.Namespaces).Pointer() == reflect.ValueOf(c.Config.Namespaces).Pointer() {
-		t.Errorf("on DeepCopy() .Values.Namespaces pointers should not be equal, but they are")
+	if reflect.ValueOf(v.Config.DefaultNamespace).Pointer() == reflect.ValueOf(c.Config.DefaultNamespace).Pointer() {
+		t.Errorf("on DeepCopy() .Values.DefaultNamespace pointers should not be equal, but they are")
 	}
 	if diff := deep.Equal(c, expectedStructureWhenEmpty); diff != nil {
 		t.Errorf("on NewEmptyPipelineVariables, expect empty variables, got diff = %s", diff)
 	}
 
-	c.AddNamespaceToConfig("Default", "some-default")
+	c.AddDefaultNamespaceToConfig("some-default")
 
 	if diff := deep.Equal(c, &jobber.PipelineVariables{
 		Values: map[string]any{},
 		Config: &jobber.TemplateExpansionConfigVariables{
-			Namespaces: map[string]*jobber.TemplateExpansionNamespace{
-				"Default": {
-					GeneratedName: "some-default",
-				},
+			DefaultNamespace: &jobber.TemplateExpansionNamespace{
+				GeneratedName: "some-default",
 			},
 		},
 		Runtime: &jobber.PipelineRuntimeValues{},
@@ -65,7 +63,7 @@ func TestVariablesBase(t *testing.T) {
 		"foo": 10,
 		"bar": true,
 		"baz": "blah",
-	})
+	}, nil)
 
 	if diff := deep.Equal(p, &jobber.PipelineVariables{
 		Values: map[string]any{
@@ -73,13 +71,13 @@ func TestVariablesBase(t *testing.T) {
 			"bar": true,
 			"baz": "blah",
 		},
-		Config:  &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Config:  &jobber.TemplateExpansionConfigVariables{DefaultNamespace: &jobber.TemplateExpansionNamespace{}},
 		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
 		t.Errorf("on creation with seed values: %s", diff)
 	}
 
-	q := jobber.NewPipelineVariablesWithSeedValues(nil)
+	q := jobber.NewPipelineVariablesWithSeedValues(nil, nil)
 
 	if diff := deep.Equal(q, expectedStructureWhenEmpty); diff != nil {
 		t.Errorf("on NewPipelineVariablesWithSeedValues(nil), expect empty variables, got diff = %s", diff)
@@ -102,7 +100,7 @@ func TestVariablesMerge(t *testing.T) {
 		},
 	}
 
-	v := jobber.NewEmptyPipelineVariables()
+	v := jobber.NewEmptyPipelineVariables(nil)
 	v1 := v.MergeValuesToCopy(firstMergeInVars)
 
 	if diff := deep.Equal(v1, &jobber.PipelineVariables{
@@ -119,7 +117,7 @@ func TestVariablesMerge(t *testing.T) {
 				"here": "there",
 			},
 		},
-		Config:  &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Config:  &jobber.TemplateExpansionConfigVariables{DefaultNamespace: &jobber.TemplateExpansionNamespace{}},
 		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
 		t.Errorf("on first merge of variables: %s", diff)
@@ -154,7 +152,7 @@ func TestVariablesMerge(t *testing.T) {
 				"no": "where",
 			},
 		},
-		Config:  &jobber.TemplateExpansionConfigVariables{Namespaces: map[string]*jobber.TemplateExpansionNamespace{}},
+		Config:  &jobber.TemplateExpansionConfigVariables{DefaultNamespace: &jobber.TemplateExpansionNamespace{}},
 		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
 		t.Errorf("on second merge of variables: %s", diff)

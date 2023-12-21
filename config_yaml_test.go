@@ -41,8 +41,7 @@ var testCases = []*configTestCase{
 		configAsString: `---
 Test:
   Definition:
-    Namespaces:
-      Default:
+    DefaultNamespace:
         Basename: perftest
     PipelineRootDirectory: /opt/pipeline/root
     Pipeline:
@@ -78,10 +77,8 @@ Test:
 		expectedStruct: &jobber.Configuration{
 			Test: &jobber.ConfigurationTest{
 				Definition: &jobber.ConfigurationDefinition{
-					Namespaces: map[string]*jobber.ConfigurationNamespace{
-						"Default": {
-							Basename: "perftest",
-						},
+					DefaultNamespace: &jobber.ConfigurationNamespace{
+						Basename: "perftest",
 					},
 					PipelineRootDirectory: "/opt/pipeline/root",
 					DefaultValues:         nil,
