@@ -16,34 +16,36 @@ import (
 )
 
 type GenericK8sResource struct {
-	Group                       string
-	Version                     string
-	Kind                        string
-	Name                        string
-	assumedGroupVersionResource schema.GroupVersionResource
-	unstructuredApiObject       *unstructured.Unstructured
-	client                      *Client
+	Group                 string
+	Version               string
+	Kind                  string
+	Name                  string
+	groupVersionResource  schema.GroupVersionResource
+	unstructuredApiObject *unstructured.Unstructured
+	client                *Client
 }
 
 func GuessResourceFromKind(kind string) string {
 	return fmt.Sprintf("%ss", strings.ToLower(kind))
 }
 
-func NewGenericK8sResourceFromUnstructured(u *unstructured.Unstructured, client *Client) *GenericK8sResource {
+func NewGenericK8sResourceFromUnstructured(u *unstructured.Unstructured, client *Client) (*GenericK8sResource, error) {
 	gvk := u.GroupVersionKind()
+
+	gvr, err := client.DetermineResourceFromGroupVersionKind(gvk)
+	if err != nil {
+		return nil, err
+	}
+
 	return &GenericK8sResource{
-		Group:   gvk.Group,
-		Version: gvk.Version,
-		Kind:    gvk.Kind,
-		Name:    u.GetName(),
-		assumedGroupVersionResource: schema.GroupVersionResource{
-			Group:    gvk.Group,
-			Version:  gvk.Version,
-			Resource: GuessResourceFromKind(gvk.Kind),
-		},
+		Group:                 gvk.Group,
+		Version:               gvk.Version,
+		Kind:                  gvk.Kind,
+		Name:                  u.GetName(),
+		groupVersionResource:  gvr,
 		unstructuredApiObject: u,
 		client:                client,
-	}
+	}, nil
 }
 
 func NewGenericK8sResourceFromUnstructuredMap(inputMap map[string]any, client *Client) (*GenericK8sResource, error) {
@@ -57,11 +59,11 @@ func NewGenericK8sResourceFromUnstructuredMap(inputMap map[string]any, client *C
 		return nil, fmt.Errorf(".apiVersion is not defined")
 	}
 
-	if candidate.GetName() == "" {
-		return nil, fmt.Errorf("metadata.name is not defined")
+	if candidate.GetName() == "" && candidate.GetGenerateName() == "" {
+		return nil, fmt.Errorf("neither metadata.name nor metadata.generateName is defined")
 	}
 
-	return NewGenericK8sResourceFromUnstructured(candidate, client), nil
+	return NewGenericK8sResourceFromUnstructured(candidate, client)
 }
 
 func (resource *GenericK8sResource) NamespaceName() string {
@@ -73,8 +75,8 @@ func (resource *GenericK8sResource) SetNamespace(namespaceName string) {
 }
 
 func (resource *GenericK8sResource) Create() (err error) {
-	resource.unstructuredApiObject, err = resource.client.Dynamic().
-		Resource(resource.assumedGroupVersionResource).
+	updatedResource, err := resource.client.Dynamic().
+		Resource(resource.groupVersionResource).
 		Namespace(resource.NamespaceName()).
 		Create(
 			context.Background(),
@@ -82,12 +84,17 @@ func (resource *GenericK8sResource) Create() (err error) {
 			metav1.CreateOptions{},
 		)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	resource.unstructuredApiObject = updatedResource
+	return nil
 }
 
 func (resource *GenericK8sResource) UpdateStatus() (err error) {
-	resource.unstructuredApiObject, err = resource.client.Dynamic().
-		Resource(resource.assumedGroupVersionResource).
+	updatedResource, err := resource.client.Dynamic().
+		Resource(resource.groupVersionResource).
 		Namespace(resource.NamespaceName()).
 		Get(
 			context.Background(),
@@ -95,12 +102,17 @@ func (resource *GenericK8sResource) UpdateStatus() (err error) {
 			metav1.GetOptions{},
 		)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	resource.unstructuredApiObject = updatedResource
+	return nil
 }
 
 func (resource *GenericK8sResource) Delete() error {
 	return resource.client.Dynamic().
-		Resource(resource.assumedGroupVersionResource).
+		Resource(resource.groupVersionResource).
 		Namespace(resource.NamespaceName()).
 		Delete(
 			context.Background(),

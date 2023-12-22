@@ -18,6 +18,7 @@ type ConfigurationDefinition struct {
 	DefaultNamespace      *ConfigurationNamespace `yaml:"DefaultNamespace"`
 	PipelineRootDirectory string                  `yaml:"PipelineRootDirectory"`
 	Pipeline              []string                `yaml:"Pipeline"`
+	ArchiveFilePath       string                  `yaml:"ArchiveFilePath"`
 }
 
 type TestCase struct {
@@ -55,14 +56,6 @@ func (c *Configuration) validate() error {
 
 	if c.Test.Definition == nil {
 		return fmt.Errorf(".Test.Definition must exist")
-	}
-
-	if c.Test.Definition.DefaultNamespace == nil {
-		return fmt.Errorf(".Test.Definition.DefaultNamespace must be defined")
-	}
-
-	if c.Test.Definition.DefaultNamespace.Basename == "" {
-		return fmt.Errorf(".Test.Definition.DefaultNamespace.Basename cannot be the empty string")
 	}
 
 	if c.Test.Definition.Pipeline == nil || len(c.Test.Definition.Pipeline) == 0 {

@@ -97,6 +97,7 @@ func (action *PipelineAction) Run(pipelineVariables *PipelineVariables, client *
 }
 
 var yamlDocumentSplitPattern = regexp.MustCompile(`(?m)^---$`)
+var emptyYamlDocumentMatch = regexp.MustCompile(`(?s)^\s*$`)
 
 func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVariables, client *Client) []*PipelineActionOutcome {
 	tmpl, err := template.New(filepath.Base(action.ActionFullyQualifiedPath)).Funcs(sprig.FuncMap()).Funcs(JobberTemplateFunctions()).ParseFiles(action.ActionFullyQualifiedPath)
@@ -123,14 +124,16 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 
 	yamlDocuments := yamlDocumentSplitPattern.Split(templateBuffer.String(), -1)
 
-	// if the template starts with the yaml separator, remove the first element which will be the empty string
-	if len(yamlDocuments) > 1 && yamlDocuments[0] == "" {
-		yamlDocuments = yamlDocuments[1:]
+	yamlDocumentsThatAreNotEmpty := make([]string, 0, len(yamlDocuments))
+	for _, yamlDocument := range yamlDocuments {
+		if !emptyYamlDocumentMatch.MatchString(yamlDocument) {
+			yamlDocumentsThatAreNotEmpty = append(yamlDocumentsThatAreNotEmpty, yamlDocument)
+		}
 	}
 
 	outcomes := make([]*PipelineActionOutcome, 0, len(yamlDocuments))
 
-	for _, yamlDocumentString := range yamlDocuments {
+	for _, yamlDocumentString := range yamlDocumentsThatAreNotEmpty {
 		outcome := &PipelineActionOutcome{
 			Variables:    pipelineVariables,
 			OutputBuffer: bytes.NewBufferString(yamlDocumentString),

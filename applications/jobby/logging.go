@@ -114,5 +114,13 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 		l.SayContextually(event.Context, "Waiting for Pod [%s] to reach Running state", event.ResourceInformation.ResourceDetails.Name)
 	case jobber.JobFailedToComplete:
 		l.SayContextually(event.Context, "Job [%s] failed: %s", event.ResourceInformation.ResourceDetails.Name, event.Error)
+	case jobber.ArchiveFileCreatedSuccessfully:
+		l.SayContextually(event.Context, "Created archive file (%s)", event.FileEvent.Path)
+	case jobber.ArchiveFileCreationFailed:
+		l.SayContextually(event.Context, "Failed to create archive file (%s): %s", event.FileEvent.Path, event.Error)
+	case jobber.AssetDirectoryDeletedSuccessfully:
+		l.SayContextually(event.Context, "Removed asset directory root at (%s)", event.FileEvent.Path)
+	case jobber.AssetDirectoryDeletionFailed:
+		l.SayContextually(event.Context, "Failed to remove asset directory root at (%s): %s", event.FileEvent.Path, event.Error)
 	}
 }

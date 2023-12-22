@@ -1,8 +1,11 @@
 package jobber
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 )
 
 type TestCaseAssetsDirectoryCreationOutcome struct {
@@ -131,4 +134,21 @@ func (m *ContextualAssetsDirectoryManager) TestCaseAssetsDirectoryPathsFor(testU
 	}
 
 	return nil
+}
+
+func (m *ContextualAssetsDirectoryManager) GenerateArchiveFileAt(archiveFilePath string) error {
+	stderrBuffer := new(bytes.Buffer)
+
+	cmd := exec.Command("/usr/bin/tar", "czf", archiveFilePath, "-C", m.testRootAssetDirectoryPath, ".")
+	cmd.Stderr = stderrBuffer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("tar failed: %s", strings.Join(strings.Split(stderrBuffer.String(), "\n"), " "))
+	}
+
+	return nil
+}
+
+func (m *ContextualAssetsDirectoryManager) RemoveAssetsDirectory() error {
+	return os.RemoveAll(m.testRootAssetDirectoryPath)
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type TemplateExpansionNamespace struct {
@@ -38,24 +39,37 @@ func NewRunner(config *Configuration, client *Client) *Runner {
 	}
 }
 
-func (runner *Runner) createDefaultNamespace() (*corev1.Namespace, error) {
-	defaultNamespaceApiObject, err := runner.client.CreateNamespaceUsingGeneratedName(runner.config.Test.Definition.DefaultNamespace.Basename)
+func (runner *Runner) createDefaultNamespace(pipelineVariables *PipelineVariables) (*corev1.Namespace, error) {
+	action, err := PipelineActionFromStringDescriptor("resources/default-namespace.yaml", runner.config.Test.Definition.PipelineRootDirectory)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create action for resources/default-namespace.yaml: %s", err)
 	}
+
+	outcome := (action.Run(pipelineVariables, runner.client))[0]
+
+	if outcome.Error != nil {
+		return nil, fmt.Errorf("error on attempt to create default namespace from resources/default-namespace.yaml: %s", err)
+	}
+
+	nsObject := new(corev1.Namespace)
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(outcome.CreatedResource.ApiObject().Object, nsObject); err != nil {
+		return nil, fmt.Errorf("failed to convert unstructured namespace object to typed: %s", err)
+	}
+
+	namespaceName := nsObject.Name
 
 	runner.resourceTracker.AddCreatedResource(&DeletableK8sResource{
 		information: &K8sResourceInformation{
 			Kind:          "Namespace",
-			Name:          defaultNamespaceApiObject.Name,
+			Name:          namespaceName,
 			NamespaceName: "",
 		},
 		deletionMethod: func(object any) error {
-			return runner.client.DeleteNamespace(defaultNamespaceApiObject)
+			return runner.client.DeleteNamespace(namespaceName)
 		},
 	})
 
-	return defaultNamespaceApiObject, nil
+	return nsObject, nil
 }
 
 func (runner *Runner) RunTest(eventChannel chan<- *Event) {
@@ -99,12 +113,14 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 				TestCaseRetrievedAssetsDirectoryPath: assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase).RetrievedAssets,
 			}
 
-			nsObject, err := runner.createDefaultNamespace()
-			if eventHandler.explainAttemptToCreateDefaultNamespace(runner.config.Test.Definition.DefaultNamespace.Basename, nsObject, EventContextFor(testUnit, testCase), err); err != nil {
+			templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testCase.Values)
+
+			nsObject, err := runner.createDefaultNamespace(templateExpansionVariables)
+			if eventHandler.explainAttemptToCreateDefaultNamespace(nsObject, EventContextFor(testUnit, testCase), err); err != nil {
 				return
 			}
 
-			templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testUnit.Values).AddDefaultNamespaceToConfig(nsObject.Name)
+			templateExpansionVariables.AddDefaultNamespaceToConfig(nsObject.Name)
 
 			for action := testCasePipeline.Restart(); action != nil; action = testCasePipeline.NextAction() {
 				for _, outcome := range action.Run(templateExpansionVariables, runner.client) {
@@ -117,27 +133,41 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 						runner.resourceTracker.AddCreatedResource(&DeletableK8sResource{
 							information: (outcome.CreatedResource.Information()),
 							deletionMethod: func(object any) error {
-								return object.(*GenericK8sResource).Delete()
+								return outcome.CreatedResource.Delete()
 							},
 						})
 					}
 				}
 			}
 
-			// for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
-			// 	if attemptDetails.Error != nil {
-			// 		eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
-			// 		return
-			// 	}
+			for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
+				if attemptDetails.Error != nil {
+					eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
+					return
+				}
 
-			// 	eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
-			// }
+				eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
+			}
 
 			eventHandler.sayThatCaseCompletedSuccessfully(testUnit, testCase)
 		}
 
 		eventHandler.sayThatUnitCompletedSuccessfully(testUnit)
 	}
+
+	if err := assetsDirectoryManager.GenerateArchiveFileAt(runner.config.Test.Definition.ArchiveFilePath); err != nil {
+		eventHandler.sayThatArchiveCreationFailed(runner.config.Test.Definition.ArchiveFilePath, assetsDirectoryManager.TestRootAssetDirectoryPath(), err)
+		return
+	}
+
+	eventHandler.sayThatArchiveCreationSucceeded(assetsDirectoryManager.TestRootAssetDirectoryPath())
+
+	if err := assetsDirectoryManager.RemoveAssetsDirectory(); err != nil {
+		eventHandler.sayThatAssetDirectoryDeletionFailed(assetsDirectoryManager.TestRootAssetDirectoryPath(), err)
+		return
+	}
+
+	eventHandler.sayThatAssetDirectoryDeletionWasSuccessful(assetsDirectoryManager.TestRootAssetDirectoryPath())
 
 	eventHandler.sayThatTestingCompletedSuccessfully()
 }

@@ -56,9 +56,13 @@ const (
 	PipelineDefinitionIsInvalid
 	AssetDirectoryCreatedSuccessfully
 	AssetDirectoryCreationFailed
+	AssetDirectoryDeletedSuccessfully
+	AssetDirectoryDeletionFailed
 	WaitingForPodToReachRunningState
 	WaitingForJobToComplete
 	JobFailedToComplete
+	ArchiveFileCreatedSuccessfully
+	ArchiveFileCreationFailed
 )
 
 type ResourceEvent struct {
@@ -174,6 +178,27 @@ func (h *eventHandler) sayThatResourceCreationFailed(resourceInformation *K8sRes
 	}
 }
 
+func (h *eventHandler) sayThatResourceDeletionSucceeded(resourceInformation *K8sResourceInformation, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type:    ResourceDeletionSuccess,
+		Context: EventContextFor(testUnit, testCase),
+		ResourceInformation: &ResourceEvent{
+			ResourceDetails: resourceInformation,
+		},
+	}
+}
+
+func (h *eventHandler) sayThatResourceDeletionFailed(resourceInformation *K8sResourceInformation, err error, testUnit *TestUnit, testCase *TestCase) {
+	h.eventChannel <- &Event{
+		Type:    ResourceDeletionFailure,
+		Context: EventContextFor(testUnit, testCase),
+		ResourceInformation: &ResourceEvent{
+			ResourceDetails: resourceInformation,
+		},
+		Error: err,
+	}
+}
+
 func (h *eventHandler) sayThatResourceTemplateExpansionFailed(templateName string, templateRetrieverMethod StringRetriever, err error, testUnit *TestUnit, testCase *TestCase) {
 	h.eventChannel <- &Event{
 		Type: ResourceTemplateExpansionFailure,
@@ -186,12 +211,12 @@ func (h *eventHandler) sayThatResourceTemplateExpansionFailed(templateName strin
 	}
 }
 
-func (h *eventHandler) explainAttemptToCreateDefaultNamespace(generatedNameBase string, createdNamespaceApiObject *corev1.Namespace, context EventContext, errorOnCreationAttempt error) {
+func (h *eventHandler) explainAttemptToCreateDefaultNamespace(createdNamespaceApiObject *corev1.Namespace, context EventContext, errorOnCreationAttempt error) {
 	var namespaceName string
 	if createdNamespaceApiObject != nil {
 		namespaceName = createdNamespaceApiObject.Name
 	} else {
-		namespaceName = fmt.Sprintf("%s-<generated>", generatedNameBase)
+		namespaceName = fmt.Sprintf("%s-<generated>", createdNamespaceApiObject.GenerateName)
 	}
 
 	if errorOnCreationAttempt != nil {
@@ -333,4 +358,43 @@ func (handler *eventHandler) explainAssetCreationOutcome(outcome *TestCaseAssets
 	if outcome.DirectoryCreationFailureError != nil {
 		handler.sayThatAssetDirectoryCreationFailed(outcome.DirectoryPathOfFailedCreation, outcome.DirectoryCreationFailureError, testUnit, testCase)
 	}
+}
+
+func (handler *eventHandler) sayThatArchiveCreationFailed(archivePath string, assetsRootDirectoryPath string, err error) {
+	handler.eventChannel <- &Event{
+		Type: ArchiveFileCreationFailed,
+		FileEvent: &FileEvent{
+			Path: archivePath,
+		},
+		Error: fmt.Errorf("failed to create archive file (%s) from assets directory (%s): %s", archivePath, assetsRootDirectoryPath, err),
+	}
+}
+
+func (handler *eventHandler) sayThatArchiveCreationSucceeded(archivePath string) {
+	handler.eventChannel <- &Event{
+		Type: ArchiveFileCreatedSuccessfully,
+		FileEvent: &FileEvent{
+			Path: archivePath,
+		},
+	}
+}
+
+func (handler *eventHandler) sayThatAssetDirectoryDeletionWasSuccessful(assetDirectoryPath string) {
+	handler.eventChannel <- &Event{
+		Type: AssetDirectoryDeletedSuccessfully,
+		FileEvent: &FileEvent{
+			Path: assetDirectoryPath,
+		},
+	}
+}
+
+func (handler *eventHandler) sayThatAssetDirectoryDeletionFailed(assetDirectoryPath string, err error) {
+	handler.eventChannel <- &Event{
+		Type: AssetDirectoryDeletionFailed,
+		FileEvent: &FileEvent{
+			Path: assetDirectoryPath,
+		},
+		Error: err,
+	}
+
 }
