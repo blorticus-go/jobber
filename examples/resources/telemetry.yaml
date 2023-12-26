@@ -1,0 +1,17 @@
+---
+{{- if .Values.Unit.Sidecar.Inject }}
+{{- if not .Values.Unit.Sidecar.Use.Telemetry }}
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+ name: disable-telemetry
+spec:
+ accessLogging:
+   - disabled: true
+ metrics:
+   - overrides:
+     - disabled: true
+ tracing:
+   - disableSpanReporting: true
+{{- end }}
+{{- end }}

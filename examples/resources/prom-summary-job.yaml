@@ -1,0 +1,45 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: prom-summary-job
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      activeDeadlineSeconds: 60
+      restartPolicy: Never
+      volumes:
+        - name: shared-pvc
+          persistentVolumeClaim:
+            claimName: shared-pipeline-pvc
+      containers:
+        - name: collector
+          image: f5vwells/prometheus-collector:{{ .Values.Global.ImageVersions.prometheus_collector }}
+          args:
+            - -n
+            - {{ .Runtime.DefaultNamespace.Name | quote }}
+            - -token
+            - {{ .Runtime.ServiceAccount "openshift-monitoring" "prometheus-k8s" | bound_bearer_token | quote }}
+            - -startts
+            - /opt/test_results/start.ts
+            - -endts
+            - /opt/test_results/end.ts
+            - -rawstatsfile
+            - /opt/test_results/container-cpu-mem-stats.raw.csv
+            - -summarystatsfile
+            - /opt/test_results/container-cpu-mem-stats.summary.csv
+            - -v
+          volumeMounts:
+            - name: shared-pvc
+              mountPath: /opt/test_results
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault

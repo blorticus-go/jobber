@@ -1,0 +1,19 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-producer
+  labels:
+    testRole: producer
+spec:
+  restartPolicy: Never
+  containers:
+    - name: producer
+      image: f5vwells/cgam-perf-test-nginx:{{ .Values.Global.ImageVersions.cgam_perf_test_nginx }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault

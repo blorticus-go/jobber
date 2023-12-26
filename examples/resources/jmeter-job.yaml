@@ -1,0 +1,58 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jmeter-consumer-job
+  labels:
+    testRole: consumer
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      activeDeadlineSeconds: {{ add .Values.Global.TestCaseDurationInSeconds 60 }}
+      restartPolicy: Never
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchExpressions:
+                  - key: testRole
+                    operator: In
+                    values:
+                      - producer
+      volumes:
+        - name: shared-pvc
+          persistentVolumeClaim:
+            claimName: shared-pipeline-pvc
+      containers:
+        - name: consumer
+          image: f5vwells/jmeter-http2:{{ .Values.Global.ImageVersions.jmeter_http2 }}
+          env:
+            - name: USING_SIDECAR
+              value: {{ .Values.Unit.Sidecar.Inject | quote }}
+            - name: USE_BUILTIN_SCENARIO
+              value: "SingleServerTarget-PreciseTPS-StaticResponses"
+            - name: __SCENARIO_VAR__producerIPorHostname
+              value: {{ .Runtime.DefaultNamespace.Pod "nginx-producer" | pod_ip_string | quote }}
+            - name: __SCENARIO_VAR__producerPort
+              value: "8080"
+            - name: __SCENARIO_VAR__httpTransactionsPerSecond
+              value: {{ .Values.Case.TPS | quote }}
+            - name: __SCENARIO_VAR__numberOfConcurrentClientConnections
+              value: {{ .Values.Case.ConcurrentClientConnections | quote }}
+            - name: __SCENARIO_VAR__testDurationInSeconds
+              value: {{ .Values.Global.TestCaseDurationInSeconds | quote }}
+          args: ["-l", "/opt/test_results/jmeter.jtl.log", "-j", "/opt/test_results/jmeter.log"] 
+          volumeMounts:
+            - name: shared-pvc
+              mountPath: /opt/test_results
+{{- if not .Values.Sidecar.Inject }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+{{- end }}

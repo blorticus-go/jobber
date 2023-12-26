@@ -1,0 +1,26 @@
+{
+  "Config": {
+    "DefaultNamespace": {
+        "GeneratedName": "perftest-djj2p"
+    },
+    "Context": {
+        "TestUnitName": "NoSidecar",
+        "TestCaseName": "100TPS",
+        "TestCaseRetrievedAssetsDirectoryPath": "/tmp/jobber.527474576/NoSidcar/100TPS/retrieved-assets/"
+    }
+  },
+  "Values": {
+      "ImageVersions": {
+        "cgam_perf_test_nginx": "0.9.0",
+        "jmeter_http2": "0.8.0",
+        "jtl_processor": "0.5.0",
+        "prometheus_collector": "0.5.2",
+        "file_extractor": "0.1.0"
+      },
+      "TPS": 100,
+      "TestDurationInSeconds": 120,
+      "InjectASidecar": "no",
+      "ConcurrentClientConnections": 1
+  }
+}
+

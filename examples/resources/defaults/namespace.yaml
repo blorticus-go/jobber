@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  generateName: asm-perftest-
+{{- if .Values.Case.Sidecar.Inject }}
+  labels:
+    istio-discovery: enabled
+    istio-injection: enabled
+{{- end }}
