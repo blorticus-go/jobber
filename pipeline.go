@@ -1,39 +1,60 @@
 package jobber
 
-type Pipeline struct {
-	actions           []*PipelineAction
-	indexOfNextAction int
-}
+// import "github.com/blorticus-go/jobber/wrapped"
 
-func NewPipelineFromStringDescriptors(pipelineDescriptors []string, pipelineActionBasePath string) (*Pipeline, error) {
-	actions := make([]*PipelineAction, len(pipelineDescriptors))
+// type Values struct {
+// 	Global map[string]any
+// 	Unit   map[string]any
+// 	Case   map[string]any
+// }
 
-	for descriptorIndex, descriptor := range pipelineDescriptors {
-		action, err := PipelineActionFromStringDescriptor(descriptor, pipelineActionBasePath)
-		if err != nil {
-			return nil, err
-		}
-		actions[descriptorIndex] = action
-	}
+// type ConfigArchiveInformation struct {
+// 	FilePath string
+// }
 
-	return &Pipeline{
-		actions:           actions,
-		indexOfNextAction: 0,
-	}, nil
-}
+// type Config struct {
+// 	Archive *ConfigArchiveInformation
+// }
 
-func (pipeline *Pipeline) NextAction() *PipelineAction {
-	if pipeline.indexOfNextAction >= len(pipeline.actions) {
-		return nil
-	}
+// type RuntimeContextUnit struct {
+// 	Name string
+// }
 
-	p := pipeline.actions[pipeline.indexOfNextAction]
-	pipeline.indexOfNextAction++
+// type RuntimeContextCase struct {
+// 	Name                         string
+// 	RetrievedAssetsDirectoryPath string
+// }
 
-	return p
-}
+// type RuntimeContext struct {
+// 	CurrentUnit *RuntimeContextUnit
+// 	CurrentCase *RuntimeContextCase
+// }
 
-func (pipeline *Pipeline) Restart() *PipelineAction {
-	pipeline.indexOfNextAction = 0
-	return pipeline.NextAction()
-}
+// type DefaultNamespace struct {
+// 	Name string
+// }
+
+// func (p *DefaultNamespace) Pod(name string) *wrapped.Pod {
+// 	return nil
+// }
+
+// type Runtime struct {
+// 	DefaultNamespace *DefaultNamespace
+// 	Context          *RuntimeContext
+// }
+
+// func (p *Runtime) Pod(name string, inNamespaceNamed string) *wrapped.Pod {
+// 	return nil
+// }
+
+// func (p *Runtime) ServiceAccount(named string, inNamespaceNamed string) *wrapped.ServiceAccount {
+// 	return nil
+// }
+
+// type Variables struct {
+// 	Values  *Values
+// 	Config  *Config
+// 	Runtime *Runtime
+// }
+
+// //func (v *Variables)

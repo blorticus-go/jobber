@@ -126,6 +126,8 @@ $ jobber -config /path/to/config -set target-version=18.3.1-am4 -set date=$(date
 Test:
   Archive:
     FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
   GlobalValues:
     ImageVersions:
       nginx_producer: 0.8.0
