@@ -65,8 +65,13 @@ func (l *Logger) Say(formatString string, a ...any) {
 }
 
 func (l *Logger) SayContextually(context jobber.EventContext, messageType LoggedMessageType, formatString string, a ...any) {
-	f := fmt.Sprintf("%s  %-ds.%ds  %s", l.possiblyFixedWidthContextString(context), charactersInLongestLoggedMessageType, charactersInLongestLoggedMessageType, formatString)
+	f := fmt.Sprintf("%s  %s  %s", l.possiblyFixedWidthContextString(context), l.eventTypeString(messageType), formatString)
 	l.Say(f, a...)
+}
+
+func (l *Logger) eventTypeString(messageType LoggedMessageType) string {
+	formatString := fmt.Sprintf("%%-%d.%ds", charactersInLongestLoggedMessageType, charactersInLongestLoggedMessageType)
+	return fmt.Sprintf(formatString, string(messageType))
 }
 
 func (l *Logger) possiblyFixedWidthContextString(context jobber.EventContext) string {
@@ -100,11 +105,19 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 	case jobber.TestCompletedSuccessfully:
 		l.SayContextually(event.Context, Successfully, "Completed Test")
 	case jobber.TryingToCreateResource:
-		l.SayContextually(event.Context, TryingTo, "Create Resource %s", resourceDescriptionFor(event.Resource))
+		if event.Resource.Name() == "" && event.Resource.GroupVersionKind().Kind == "Namespace" {
+			l.SayContextually(event.Context, TryingTo, "Create default Namespace")
+		} else {
+			l.SayContextually(event.Context, TryingTo, "Create Resource %s", resourceDescriptionFor(event.Resource))
+		}
 	case jobber.SuccessfullyCreatedResource:
 		l.SayContextually(event.Context, Successfully, "Created Resource %s", resourceDescriptionFor(event.Resource))
 	case jobber.FailedToCreateResource:
 		l.SayContextually(event.Context, FailedTo, "Create Resource %s: %s", resourceDescriptionFor(event.Resource), event.Error)
+	case jobber.SuccessfullyDeletedResource:
+		l.SayContextually(event.Context, Successfully, "Deleted Resource %s", resourceDescriptionFor(event.Resource))
+	case jobber.FailedToDeleteResource:
+		l.SayContextually(event.Context, FailedTo, "Delete Resource %s: %s", resourceDescriptionFor(event.Resource), event.Error)
 	case jobber.WaitingForJobToComplete:
 		l.SayContextually(event.Context, WaitingFor, "Job Named [%s] in Namespace [%s] to Complete", event.Resource.Name(), event.Resource.NamespaceName())
 	case jobber.JobCompletedSuccessfully:

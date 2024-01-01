@@ -131,7 +131,7 @@ var serviceAccountGvk = schema.GroupVersionKind{
 var namespaceGvk = schema.GroupVersionKind{
 	Group:   "",
 	Version: "v1",
-	Kind:    "namespaces",
+	Kind:    "Namespace",
 }
 
 func NewPodFromGeneric(g *Generic, client *api.Client) (*Pod, error) {
@@ -302,16 +302,15 @@ func (n *Namespace) TypedApiObject() *corev1.Namespace {
 	return n.typedApiObject
 }
 
-func NewNamespaceUsingGeneratedName(basename string, client *api.Client) (*Namespace, error) {
-	typedApiObject, err := client.Set().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: basename}}, metav1.CreateOptions{})
-	if err != nil {
-		return nil, err
-	}
-
+func NewNamespaceUsingGeneratedName(basename string, client *api.Client) *Namespace {
 	return &Namespace{
-		typedApiObject: typedApiObject,
-		client:         client,
-	}, nil
+		client: client,
+		typedApiObject: &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: basename,
+			},
+		},
+	}
 }
 
 func (n *Namespace) Name() string {

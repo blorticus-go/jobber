@@ -1,5 +1,72 @@
 package jobber
 
+import (
+	"github.com/blorticus-go/jobber/api"
+	"github.com/blorticus-go/jobber/pipeline"
+	"github.com/blorticus-go/jobber/wrapped"
+)
+
+type TestRunner struct {
+	configuration *Configuration
+	apiClient     *api.Client
+}
+
+func NewTestRunner(testConfiguration *Configuration, apiClient *api.Client) *TestRunner {
+	return &TestRunner{
+		configuration: testConfiguration,
+		apiClient:     apiClient,
+	}
+}
+
+func (runner *TestRunner) RunTest(eventChannel chan<- *Event) {
+	scopedEventFactory := NewGlobalScopedEventFactory()
+	tracker := wrapped.NewResourceTracker()
+
+	defaultNamespace, err := runner.handleDefaultNamespaceCreation(eventChannel, scopedEventFactory, tracker)
+	if err != nil {
+		return
+	}
+
+	variables := pipeline.NewVariables().
+		SetGlobalValues(runner.configuration.Test.GlobalValues).
+		SetAssetArchiveFilePath(runner.configuration.Test.AssetArchive.FilePath).
+		SetDefaultNamespaceName(defaultNamespace.Name())
+
+	for _, testUnit := range runner.configuration.Test.Units {
+		eventChannel <- scopedEventFactory.NewUnitStartedEvent()
+	}
+
+	runner.handleDeletionsForPendingCreatedResources(eventChannel, scopedEventFactory, tracker)
+
+	eventChannel <- scopedEventFactory.NewTestCompletedSuccessfullyEvent()
+}
+
+func (runner *TestRunner) handleDefaultNamespaceCreation(eventChannel chan<- *Event, scopedEventFactory *ScopedEventFactory, tracker *wrapped.ResourceTracker) (createdNamespace *wrapped.Namespace, err error) {
+	defaultNamespace := wrapped.NewNamespaceUsingGeneratedName(runner.configuration.Test.DefaultNamespace.Basename, runner.apiClient)
+	eventChannel <- scopedEventFactory.NewTryingToCreateResourceEvent(defaultNamespace)
+
+	if err := defaultNamespace.Create(); err != nil {
+		eventChannel <- scopedEventFactory.NewFailedToCreateResourceEvent(defaultNamespace, err)
+		return nil, err
+	}
+
+	eventChannel <- scopedEventFactory.NewSuccessfullyCreatedResourceEvent(defaultNamespace)
+	tracker.AddCreatedResource(defaultNamespace)
+
+	return defaultNamespace, nil
+}
+
+func (runner *TestRunner) handleDeletionsForPendingCreatedResources(eventChannel chan<- *Event, scopedEventFactory *ScopedEventFactory, tracker *wrapped.ResourceTracker) {
+	deletionResult := tracker.AttemptToDeleteAllAsYetUndeletedResources()
+	for _, r := range deletionResult.SuccessfullyDeletedResources {
+		eventChannel <- scopedEventFactory.NewSuccessfullyDeletedResourceEvent(r)
+	}
+
+	if deletionResult.ResourceForWhichDeletionFailed != nil {
+		eventChannel <- scopedEventFactory.NewFailedToDeleteResourceEvent(deletionResult.ResourceForWhichDeletionFailed, deletionResult.Error)
+	}
+}
+
 // import (
 // 	"errors"
 // 	"fmt"

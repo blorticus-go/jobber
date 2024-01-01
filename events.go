@@ -15,6 +15,8 @@ const (
 	TryingToCreateResource
 	SuccessfullyCreatedResource
 	FailedToCreateResource
+	SuccessfullyDeletedResource
+	FailedToDeleteResource
 	WaitingForJobToComplete
 	JobCompletedSuccessfully
 	JobFailedToCompleteSuccessfully
@@ -127,6 +129,23 @@ func (factory *ScopedEventFactory) NewSuccessfullyCreatedResourceEvent(resource 
 func (factory *ScopedEventFactory) NewFailedToCreateResourceEvent(resource wrapped.Resource, err error) *Event {
 	return &Event{
 		Type:     FailedToCreateResource,
+		Resource: resource,
+		Context:  factory.currentContext,
+		Error:    err,
+	}
+}
+
+func (factory *ScopedEventFactory) NewSuccessfullyDeletedResourceEvent(resource wrapped.Resource) *Event {
+	return &Event{
+		Type:     SuccessfullyDeletedResource,
+		Resource: resource,
+		Context:  factory.currentContext,
+	}
+}
+
+func (factory *ScopedEventFactory) NewFailedToDeleteResourceEvent(resource wrapped.Resource, err error) *Event {
+	return &Event{
+		Type:     FailedToDeleteResource,
 		Resource: resource,
 		Context:  factory.currentContext,
 		Error:    err,
