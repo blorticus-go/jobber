@@ -3,8 +3,10 @@ package wrapped
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/blorticus-go/jobber/api"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -31,12 +33,39 @@ type Generic struct {
 	groupVersionKind      *schema.GroupVersionKind
 }
 
+func NewResourceFromMap(objectMap map[string]any, client *api.Client) *Generic {
+	return &Generic{
+		unstructuredApiObject: &unstructured.Unstructured{
+			Object: objectMap,
+		},
+		client: client,
+	}
+}
+
+func NewResourceForNamespaceFromMap(objectMap map[string]any, inNamespaceName string, client *api.Client) *Generic {
+	u := &unstructured.Unstructured{
+		Object: objectMap,
+	}
+
+	u.SetNamespace(inNamespaceName)
+
+	return &Generic{
+		unstructuredApiObject: u,
+		client:                client,
+	}
+}
+
 func (g *Generic) Name() string {
 	return g.unstructuredApiObject.GetName()
 }
 
 func (g *Generic) NamespaceName() string {
 	return g.unstructuredApiObject.GetNamespace()
+}
+
+func (g *Generic) SetNamespaceWithoutCommit(namespaceName string) *Generic {
+	g.unstructuredApiObject.SetNamespace(namespaceName)
+	return g
 }
 
 func (g *Generic) GroupVersionKind() schema.GroupVersionKind {
@@ -134,7 +163,13 @@ var namespaceGvk = schema.GroupVersionKind{
 	Kind:    "Namespace",
 }
 
-func NewPodFromGeneric(g *Generic, client *api.Client) (*Pod, error) {
+var jobGvk = schema.GroupVersionKind{
+	Group:   "batch",
+	Version: "v1",
+	Kind:    "Job",
+}
+
+func NewPodFromGeneric(g *Generic) (*Pod, error) {
 	if g.IsNotA(podGvk) {
 		return nil, fmt.Errorf("requested type is (%s) not (v1/Pod)", g.GroupVersionKindAsAString())
 	}
@@ -146,23 +181,7 @@ func NewPodFromGeneric(g *Generic, client *api.Client) (*Pod, error) {
 
 	return &Pod{
 		typedApiObject: typedApiObject,
-		client:         client,
-	}, nil
-}
-
-func NewServiceAccountFromGeneric(g *Generic, client *api.Client) (*ServiceAccount, error) {
-	if g.IsNotA(serviceAccountGvk) {
-		return nil, fmt.Errorf("requested type is (%s) not (v1/ServiceAccount)", g.GroupVersionKindAsAString())
-	}
-
-	typedApiObject := new(corev1.ServiceAccount)
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(g.UnstructuredMap(), typedApiObject); err != nil {
-		return nil, err
-	}
-
-	return &ServiceAccount{
-		typedApiObject: typedApiObject,
-		client:         client,
+		client:         g.client,
 	}, nil
 }
 
@@ -229,9 +248,36 @@ func (p *Pod) PodIpAsAString() string {
 	return p.typedApiObject.Status.PodIP
 }
 
+func (p *Pod) WaitForRunningState(maximumAmountOfTimeToWait time.Duration) error {
+	timer := NewWaitTimer(maximumAmountOfTimeToWait, time.Second)
+
+	return timer.TestExpectation(
+		p,
+		func(objectToTest Updatable) (expectationReached bool, errorOccurred error) {
+			return p.typedApiObject.Status.Phase == corev1.PodRunning, nil
+		},
+	)
+}
+
 type ServiceAccount struct {
 	typedApiObject *corev1.ServiceAccount
 	client         *api.Client
+}
+
+func NewServiceAccountFromGeneric(g *Generic) (*ServiceAccount, error) {
+	if g.IsNotA(serviceAccountGvk) {
+		return nil, fmt.Errorf("requested type is (%s) not (v1/ServiceAccount)", g.GroupVersionKindAsAString())
+	}
+
+	typedApiObject := new(corev1.ServiceAccount)
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(g.UnstructuredMap(), typedApiObject); err != nil {
+		return nil, err
+	}
+
+	return &ServiceAccount{
+		typedApiObject: typedApiObject,
+		client:         g.client,
+	}, nil
 }
 
 func (sa *ServiceAccount) Name() string {
@@ -366,4 +412,104 @@ func (n *Namespace) UnstructuredApiObject() *unstructured.Unstructured {
 func (n *Namespace) UnstructuredMap() map[string]any {
 	uMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(n.typedApiObject)
 	return uMap
+}
+
+type Job struct {
+	typedApiObject *batchv1.Job
+	client         *api.Client
+}
+
+func (resource *Job) TypedApiObject() *batchv1.Job {
+	return resource.typedApiObject
+}
+
+func NewJobFromGeneric(g *Generic) (*Job, error) {
+	if g.IsNotA(jobGvk) {
+		return nil, fmt.Errorf("requested type is (%s) not (batch/v1/Job)", g.GroupVersionKindAsAString())
+	}
+
+	typedApiObject := new(batchv1.Job)
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(g.UnstructuredMap(), typedApiObject); err != nil {
+		return nil, err
+	}
+
+	return &Job{
+		typedApiObject: typedApiObject,
+		client:         g.client,
+	}, nil
+}
+
+func (resource *Job) Name() string {
+	return resource.typedApiObject.Name
+}
+
+func (resource *Job) NamespaceName() string {
+	return resource.typedApiObject.Namespace
+}
+
+func (resource *Job) GroupVersionKind() schema.GroupVersionKind {
+	return namespaceGvk
+}
+
+func (resource *Job) GroupVersionResource() schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    "batch",
+		Version:  "v1",
+		Resource: "jobs",
+	}
+}
+
+func (resource *Job) Create() error {
+	updatedApiObject, err := resource.client.Set().BatchV1().Jobs(resource.typedApiObject.Namespace).Create(context.Background(), resource.typedApiObject, metav1.CreateOptions{})
+	if err != nil {
+		return err
+	}
+
+	resource.typedApiObject = updatedApiObject
+	return nil
+}
+
+func (resource *Job) Delete() error {
+	return resource.client.Set().BatchV1().Jobs(resource.typedApiObject.Namespace).Delete(context.Background(), resource.typedApiObject.Name, resource.client.DefaultResourceDeletionOptions())
+}
+
+func (resource *Job) UpdateStatus() error {
+	updatedApiObject, err := resource.client.Set().BatchV1().Jobs(resource.typedApiObject.Namespace).Get(context.Background(), resource.typedApiObject.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	resource.typedApiObject = updatedApiObject
+	return nil
+}
+
+func (resource *Job) UnstructuredApiObject() *unstructured.Unstructured {
+	return &unstructured.Unstructured{
+		Object: resource.UnstructuredMap(),
+	}
+}
+
+func (resource *Job) UnstructuredMap() map[string]any {
+	uMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(resource.typedApiObject)
+	return uMap
+}
+
+func (resource *Job) WaitForJobCompletion() error {
+	ticker := time.NewTicker(10 * time.Second)
+
+	for {
+		if err := resource.UpdateStatus(); err != nil {
+			return err
+		}
+
+		if resource.typedApiObject.Status.CompletionTime != nil {
+			return nil
+		}
+
+		if resource.typedApiObject.Status.Failed > 0 {
+			return fmt.Errorf("[%d] Pods for the Job failed", resource.typedApiObject.Status.Failed)
+		}
+
+		<-ticker.C
+	}
 }

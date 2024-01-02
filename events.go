@@ -58,19 +58,19 @@ func NewGlobalScopedEventFactory() *ScopedEventFactory {
 	}
 }
 
-func (factory *ScopedEventFactory) ScopedToUnit(testUnit *TestUnit) *ScopedEventFactory {
+func (factory *ScopedEventFactory) ScopedToUnitNamed(testUnitName string) *ScopedEventFactory {
 	return &ScopedEventFactory{
 		currentContext: EventContext{
-			TestUnitName: testUnit.Name,
+			TestUnitName: testUnitName,
 		},
 	}
 }
 
-func (factory *ScopedEventFactory) ScopedToCase(testCase *TestCase) *ScopedEventFactory {
+func (factory *ScopedEventFactory) ScopedToCaseNamed(testCaseName string) *ScopedEventFactory {
 	return &ScopedEventFactory{
 		currentContext: EventContext{
 			TestUnitName: factory.currentContext.TestUnitName,
-			TestCaseName: testCase.Name,
+			TestCaseName: testCaseName,
 		},
 	}
 }

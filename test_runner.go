@@ -33,7 +33,17 @@ func (runner *TestRunner) RunTest(eventChannel chan<- *Event) {
 		SetDefaultNamespaceName(defaultNamespace.Name())
 
 	for _, testUnit := range runner.configuration.Test.Units {
+		scopedEventFactory := scopedEventFactory.ScopedToUnitNamed(testUnit.Name)
+		variables := variables.CopyWithAddedTestUnitValues(testUnit.Name, testUnit.Values)
+
 		eventChannel <- scopedEventFactory.NewUnitStartedEvent()
+
+		for _, testCase := range runner.configuration.Test.Cases {
+			scopedEventFactory := scopedEventFactory.ScopedToCaseNamed(testCase.Name)
+			variables.CopyWithAddedTestCaseValues(testCase.Name, testCase.Values)
+
+			eventChannel <- scopedEventFactory.NewCaseStartedEvent()
+		}
 	}
 
 	runner.handleDeletionsForPendingCreatedResources(eventChannel, scopedEventFactory, tracker)
