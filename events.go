@@ -20,12 +20,12 @@ const (
 	WaitingForJobToComplete
 	JobCompletedSuccessfully
 	JobFailedToCompleteSuccessfully
-	TryingToCreateDirectory
-	TryingToCreateFile
 	SuccessfullyCreatedFile
 	SuccessfullyCreatedDirectory
 	FailedToCreateFile
 	FailedToCreateDirectory
+	FailedToProcessPipelineDescriptors
+	FailedToProcessTemplate
 )
 
 type EventContext struct {
@@ -48,178 +48,185 @@ type Event struct {
 	Error               error
 }
 
-type ScopedEventFactory struct {
+type ScopedEventParrot struct {
 	currentContext EventContext
+	eventChannel   chan<- *Event
 }
 
-func NewGlobalScopedEventFactory() *ScopedEventFactory {
-	return &ScopedEventFactory{
+func NewGloballyScopedEventParrot(eventChannel chan<- *Event) *ScopedEventParrot {
+	return &ScopedEventParrot{
 		currentContext: EventContext{},
+		eventChannel:   eventChannel,
 	}
 }
 
-func (factory *ScopedEventFactory) ScopedToUnitNamed(testUnitName string) *ScopedEventFactory {
-	return &ScopedEventFactory{
+func (parrot *ScopedEventParrot) ScopedToUnitNamed(testUnitName string) *ScopedEventParrot {
+	return &ScopedEventParrot{
 		currentContext: EventContext{
 			TestUnitName: testUnitName,
 		},
+		eventChannel: parrot.eventChannel,
 	}
 }
 
-func (factory *ScopedEventFactory) ScopedToCaseNamed(testCaseName string) *ScopedEventFactory {
-	return &ScopedEventFactory{
+func (parrot *ScopedEventParrot) ScopedToCaseNamed(testCaseName string) *ScopedEventParrot {
+	return &ScopedEventParrot{
 		currentContext: EventContext{
-			TestUnitName: factory.currentContext.TestUnitName,
+			TestUnitName: parrot.currentContext.TestUnitName,
 			TestCaseName: testCaseName,
 		},
+		eventChannel: parrot.eventChannel,
 	}
 }
 
-func (factory *ScopedEventFactory) NewUnitStartedEvent() *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatUnitStarted() {
+	parrot.eventChannel <- &Event{
 		Type:    UnitStarted,
-		Context: factory.currentContext,
+		Context: parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewCaseStartedEvent() *Event {
-	return &Event{
-		Type:    UnitStarted,
-		Context: factory.currentContext,
+func (parrot *ScopedEventParrot) SayThatCaseStarted() {
+	parrot.eventChannel <- &Event{
+		Type:    CaseStarted,
+		Context: parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewUnitCompletedSuccessfullyEvent() *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatUnitCompletedSuccessfully() {
+	parrot.eventChannel <- &Event{
 		Type:    UnitCompletedSuccessfully,
-		Context: factory.currentContext,
+		Context: parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewCaseCompletedSuccessfullyEvent() *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatCaseCompletedSuccessfully() {
+	parrot.eventChannel <- &Event{
 		Type:    CaseCompletedSuccessfully,
-		Context: factory.currentContext,
+		Context: parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewTestCompletedSuccessfullyEvent() *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatTestCompletedSuccessfully() {
+	parrot.eventChannel <- &Event{
 		Type:    TestCompletedSuccessfully,
-		Context: factory.currentContext,
+		Context: parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewTryingToCreateResourceEvent(resource wrapped.Resource) *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatWeAreTryingToCreateAResource(resource wrapped.Resource) {
+	parrot.eventChannel <- &Event{
 		Type:     TryingToCreateResource,
 		Resource: resource,
-		Context:  factory.currentContext,
+		Context:  parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewSuccessfullyCreatedResourceEvent(resource wrapped.Resource) *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatAResourceWasCreatedSuccessfully(resource wrapped.Resource) {
+	parrot.eventChannel <- &Event{
 		Type:     SuccessfullyCreatedResource,
 		Resource: resource,
-		Context:  factory.currentContext,
+		Context:  parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewFailedToCreateResourceEvent(resource wrapped.Resource, err error) *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatWeFailedToCreateAResource(resource wrapped.Resource, err error) {
+	parrot.eventChannel <- &Event{
 		Type:     FailedToCreateResource,
 		Resource: resource,
-		Context:  factory.currentContext,
+		Context:  parrot.currentContext,
 		Error:    err,
 	}
 }
 
-func (factory *ScopedEventFactory) NewSuccessfullyDeletedResourceEvent(resource wrapped.Resource) *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatAResourceWasSuccessfullyDeleted(resource wrapped.Resource) {
+	parrot.eventChannel <- &Event{
 		Type:     SuccessfullyDeletedResource,
 		Resource: resource,
-		Context:  factory.currentContext,
+		Context:  parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewFailedToDeleteResourceEvent(resource wrapped.Resource, err error) *Event {
-	return &Event{
+func (parrot *ScopedEventParrot) SayThatWeFailedToDeleteAResource(resource wrapped.Resource, err error) {
+	parrot.eventChannel <- &Event{
 		Type:     FailedToDeleteResource,
 		Resource: resource,
-		Context:  factory.currentContext,
+		Context:  parrot.currentContext,
 		Error:    err,
 	}
 }
 
-func (factory *ScopedEventFactory) NewWaitingForJobToCompleteEvent(resource wrapped.Resource) *Event {
-	return &Event{
-		Type:    TestCompletedSuccessfully,
-		Context: factory.currentContext,
+func (parrot *ScopedEventParrot) SayThatWeAreWaitingForAJobToComplete(resource wrapped.Resource) {
+	parrot.eventChannel <- &Event{
+		Type:     WaitingForJobToComplete,
+		Resource: resource,
+		Context:  parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewJobCompletedSuccessfullyEvent(resource wrapped.Resource) *Event {
-	return &Event{
-		Type:    TestCompletedSuccessfully,
-		Context: factory.currentContext,
+func (parrot *ScopedEventParrot) SayThatAJobSuccessfullyCompleted(resource wrapped.Resource) {
+	parrot.eventChannel <- &Event{
+		Type:     JobCompletedSuccessfully,
+		Resource: resource,
+		Context:  parrot.currentContext,
 	}
 }
 
-func (factory *ScopedEventFactory) NewJobFailedToCompleteSuccessfullyEvent(resource wrapped.Resource, err error) *Event {
-	return &Event{
-		Type:    TestCompletedSuccessfully,
-		Context: factory.currentContext,
+func (parrot *ScopedEventParrot) SayThatAJobFailedToComplete(resource wrapped.Resource, err error) {
+	parrot.eventChannel <- &Event{
+		Type:     JobFailedToCompleteSuccessfully,
+		Context:  parrot.currentContext,
+		Resource: resource,
+		Error:    err,
+	}
+}
+
+func (parrot *ScopedEventParrot) SayThatAFileWasCreated(filePath string) {
+	parrot.eventChannel <- &Event{
+		Type:                SuccessfullyCreatedFile,
+		Context:             parrot.currentContext,
+		FileOrDirectoryPath: filePath,
+	}
+}
+
+func (parrot *ScopedEventParrot) SayThatADirectoryWasCreated(directoryPath string) {
+	parrot.eventChannel <- &Event{
+		Type:                SuccessfullyCreatedDirectory,
+		Context:             parrot.currentContext,
+		FileOrDirectoryPath: directoryPath,
+	}
+}
+
+func (parrot *ScopedEventParrot) SayThatWeFailedToCreateAFile(filePath string, err error) {
+	parrot.eventChannel <- &Event{
+		Type:                FailedToCreateFile,
+		Context:             parrot.currentContext,
+		FileOrDirectoryPath: filePath,
+		Error:               err,
+	}
+}
+
+func (parrot *ScopedEventParrot) SayThatWeFailedToCreateADirectory(directoryPath string, err error) {
+	parrot.eventChannel <- &Event{
+		Type:                FailedToCreateDirectory,
+		Context:             parrot.currentContext,
+		FileOrDirectoryPath: directoryPath,
+		Error:               err,
+	}
+}
+
+func (parrot *ScopedEventParrot) SayThatWeCouldNotProcessThePipelineDescriptors(err error) {
+	parrot.eventChannel <- &Event{
+		Type:    FailedToProcessPipelineDescriptors,
+		Context: parrot.currentContext,
 		Error:   err,
 	}
 }
 
-func (factory *ScopedEventFactory) NewTryingToCreateDirectoryEvent(directoryPath string) *Event {
-	return &Event{
-		Type:                TestCompletedSuccessfully,
-		Context:             factory.currentContext,
-		FileOrDirectoryPath: directoryPath,
-	}
-}
-
-func (factory *ScopedEventFactory) NewTryingToCreateFileEvent(filePath string) *Event {
-	return &Event{
-		Type:                TestCompletedSuccessfully,
-		Context:             factory.currentContext,
-		FileOrDirectoryPath: filePath,
-	}
-}
-
-func (factory *ScopedEventFactory) NewSuccessfullyCreatedFileEvent(filePath string) *Event {
-	return &Event{
-		Type:                TestCompletedSuccessfully,
-		Context:             factory.currentContext,
-		FileOrDirectoryPath: filePath,
-	}
-}
-
-func (factory *ScopedEventFactory) NewSuccessfullyCreatedDirectoryEvent(directoryPath string) *Event {
-	return &Event{
-		Type:                TestCompletedSuccessfully,
-		Context:             factory.currentContext,
-		FileOrDirectoryPath: directoryPath,
-	}
-}
-
-func (factory *ScopedEventFactory) NewFailedToCreateFileEvent(filePath string, err error) *Event {
-	return &Event{
-		Type:                TestCompletedSuccessfully,
-		Context:             factory.currentContext,
-		FileOrDirectoryPath: filePath,
-		Error:               err,
-	}
-}
-
-func (factory *ScopedEventFactory) NewFailedToCreateDirectoryEvent(directoryPath string, err error) *Event {
-	return &Event{
-		Type:                TestCompletedSuccessfully,
-		Context:             factory.currentContext,
-		FileOrDirectoryPath: directoryPath,
-		Error:               err,
+func (parrot *ScopedEventParrot) SayThatWeFailedToProcessATemplate(err error) {
+	parrot.eventChannel <- &Event{
+		Type:    FailedToProcessTemplate,
+		Context: parrot.currentContext,
+		Error:   err,
 	}
 }

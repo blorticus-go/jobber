@@ -191,9 +191,6 @@ func TestTemplatedResourceAction(t *testing.T) {
 					ExpectedType: pipeline.ResourceYamlParseFailed,
 					ExpectError:  true,
 				},
-				{
-					ExpectedType: pipeline.ActionCompleted,
-				},
 			},
 		},
 		{
@@ -208,9 +205,6 @@ func TestTemplatedResourceAction(t *testing.T) {
 					ExpectedType: pipeline.ResourceYamlParseFailed,
 					ExpectError:  true,
 				},
-				{
-					ExpectedType: pipeline.ActionCompleted,
-				},
 			},
 		},
 		{
@@ -224,9 +218,6 @@ func TestTemplatedResourceAction(t *testing.T) {
 				{
 					ExpectedType: pipeline.ResourceYamlParseFailed,
 					ExpectError:  true,
-				},
-				{
-					ExpectedType: pipeline.ActionCompleted,
 				},
 			},
 		},
@@ -247,7 +238,7 @@ func TestTemplatedResourceAction(t *testing.T) {
 					ExpectResource: true,
 				},
 				{
-					ExpectedType: pipeline.ActionCompleted,
+					ExpectedType: pipeline.ActionCompletedSuccessfully,
 				},
 			},
 		},
@@ -280,7 +271,7 @@ func TestTemplatedResourceAction(t *testing.T) {
 					ExpectResource: true,
 				},
 				{
-					ExpectedType: pipeline.ActionCompleted,
+					ExpectedType: pipeline.ActionCompletedSuccessfully,
 				},
 			},
 		}} {

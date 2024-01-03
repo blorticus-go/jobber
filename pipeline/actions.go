@@ -261,7 +261,6 @@ var emptyYamlDocumentMatch = regexp.MustCompile(`(?s)^\s*$`)
 
 func (action *TemplatedResourceAction) Run(pipelineVariables *Variables, messages chan<- *ActionMessage) {
 	defer func() {
-		messages <- NewActionCompletedMessage()
 		close(messages)
 	}()
 
@@ -316,6 +315,8 @@ func (action *TemplatedResourceAction) Run(pipelineVariables *Variables, message
 
 		messages <- NewResourceCreatedSuccessfully(resource)
 	}
+
+	messages <- NewActionCompletedSuccessfullyMessage()
 }
 
 type ValuesTransformAction struct {

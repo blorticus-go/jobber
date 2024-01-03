@@ -1,28 +1,38 @@
 package jobber
 
 import (
+	"text/template"
+
+	"github.com/Masterminds/sprig"
 	"github.com/blorticus-go/jobber/api"
 	"github.com/blorticus-go/jobber/pipeline"
 	"github.com/blorticus-go/jobber/wrapped"
 )
 
 type TestRunner struct {
-	configuration   *Configuration
-	resourceFactory wrapped.ResourceFactory
+	configuration                *Configuration
+	resourceFactory              wrapped.ResourceFactory
+	templateExpansionFunctionMap template.FuncMap
 }
 
 func NewTestRunner(testConfiguration *Configuration, apiClient *api.Client) *TestRunner {
 	return &TestRunner{
-		configuration:   testConfiguration,
-		resourceFactory: wrapped.NewFactory(apiClient),
+		configuration:                testConfiguration,
+		resourceFactory:              wrapped.NewFactory(apiClient),
+		templateExpansionFunctionMap: sprig.FuncMap(),
 	}
 }
 
 func (runner *TestRunner) RunTest(eventChannel chan<- *Event) {
-	scopedEventFactory := NewGlobalScopedEventFactory()
+	eventParrot := NewGloballyScopedEventParrot(eventChannel)
 	tracker := wrapped.NewResourceTracker()
 
-	defaultNamespace, err := runner.handleDefaultNamespaceCreation(eventChannel, scopedEventFactory, tracker)
+	actionManager, err := runner.preparePipelineActionManager(eventChannel, eventParrot)
+	if err != nil {
+		return
+	}
+
+	defaultNamespace, err := runner.handleDefaultNamespaceCreation(eventChannel, eventParrot, tracker)
 	if err != nil {
 		return
 	}
@@ -33,47 +43,104 @@ func (runner *TestRunner) RunTest(eventChannel chan<- *Event) {
 		SetDefaultNamespaceName(defaultNamespace.Name())
 
 	for _, testUnit := range runner.configuration.Test.Units {
-		scopedEventFactory := scopedEventFactory.ScopedToUnitNamed(testUnit.Name)
+		eventParrot := eventParrot.ScopedToUnitNamed(testUnit.Name)
 		variables := variables.CopyWithAddedTestUnitValues(testUnit.Name, testUnit.Values)
 
-		eventChannel <- scopedEventFactory.NewUnitStartedEvent()
+		eventParrot.SayThatUnitStarted()
 
 		for _, testCase := range runner.configuration.Test.Cases {
-			scopedEventFactory := scopedEventFactory.ScopedToCaseNamed(testCase.Name)
+			eventParrot := eventParrot.ScopedToCaseNamed(testCase.Name)
 			variables.CopyWithAddedTestCaseValues(testCase.Name, testCase.Values)
 
-			eventChannel <- scopedEventFactory.NewCaseStartedEvent()
+			eventParrot.SayThatCaseStarted()
+
+			err := runner.runPipeline(variables, actionManager, tracker, eventChannel, eventParrot)
+			if err != nil {
+				return
+			}
+
+			runner.handleDeletionsForPendingCreatedResources(eventChannel, eventParrot, tracker)
 		}
 	}
 
-	runner.handleDeletionsForPendingCreatedResources(eventChannel, scopedEventFactory, tracker)
-
-	eventChannel <- scopedEventFactory.NewTestCompletedSuccessfullyEvent()
+	eventParrot.SayThatTestCompletedSuccessfully()
 }
 
-func (runner *TestRunner) handleDefaultNamespaceCreation(eventChannel chan<- *Event, scopedEventFactory *ScopedEventFactory, tracker *wrapped.ResourceTracker) (createdNamespace wrapped.Resource, err error) {
-	defaultNamespace := runner.resourceFactory.NewNamespaceUsingGeneratedName(runner.configuration.Test.DefaultNamespace.Basename)
-	eventChannel <- scopedEventFactory.NewTryingToCreateResourceEvent(defaultNamespace)
+func (runner *TestRunner) runPipeline(testCaseScopedVariables *pipeline.Variables, actionManager *pipeline.Manager, resourceTracker *wrapped.ResourceTracker, eventChannel chan<- *Event, scopedEventFactory *ScopedEventParrot) error {
+	actionIterator := actionManager.ActionIterator()
+	for actionIterator.Next() {
+		actionMessageChan := make(chan *pipeline.ActionMessage)
+		action := actionIterator.Value()
 
-	if err := defaultNamespace.Create(); err != nil {
-		eventChannel <- scopedEventFactory.NewFailedToCreateResourceEvent(defaultNamespace, err)
+		go action.Run(testCaseScopedVariables, actionMessageChan)
+
+		for {
+			msg := <-actionMessageChan
+			switch msg.Type {
+			case pipeline.ActionCompletedSuccessfully:
+				return nil
+			case pipeline.ResourceCreatedSuccessfully:
+				scopedEventFactory.SayThatAResourceWasCreatedSuccessfully(msg.Resource)
+				resourceTracker.AddCreatedResource(msg.Resource)
+			case pipeline.ExecutionCompletedSuccessfully:
+			case pipeline.TemplateExpandedSuccessfully:
+			case pipeline.VariablesTransformCompletedSuccessfully:
+			case pipeline.WaitingForJobCompletion:
+				scopedEventFactory.SayThatWeAreWaitingForAJobToComplete(msg.Resource)
+			case pipeline.WaitingForPodRunningState:
+			case pipeline.ResourceCreationFailed:
+				scopedEventFactory.SayThatWeFailedToCreateAResource(msg.Resource, msg.Error)
+			case pipeline.ResourceYamlParseFailed:
+				scopedEventFactory.SayThatWeFailedToProcessATemplate(msg.Error)
+			case pipeline.TemplateExpansionFailed:
+				scopedEventFactory.SayThatWeFailedToProcessATemplate(msg.Error)
+			case pipeline.ExecutionFailed:
+			}
+
+			if msg.Error != nil {
+				return msg.Error
+			}
+		}
+	}
+
+	return nil
+}
+
+func (runner *TestRunner) preparePipelineActionManager(eventChannel chan<- *Event, scopedEventFactory *ScopedEventParrot) (*pipeline.Manager, error) {
+	actionFactory := pipeline.NewActionFactory(runner.resourceFactory, runner.templateExpansionFunctionMap)
+	actionManager := pipeline.NewManager(runner.configuration.Test.Pipeline.ActionDefinitionsRootDirectory, actionFactory)
+
+	if err := actionManager.PrepareActionsFromStringList(runner.configuration.Test.Pipeline.ActionsInOrder); err != nil {
+		scopedEventFactory.SayThatWeCouldNotProcessThePipelineDescriptors(err)
 		return nil, err
 	}
 
-	eventChannel <- scopedEventFactory.NewSuccessfullyCreatedResourceEvent(defaultNamespace)
+	return actionManager, nil
+}
+
+func (runner *TestRunner) handleDefaultNamespaceCreation(eventChannel chan<- *Event, scopedEventFactory *ScopedEventParrot, tracker *wrapped.ResourceTracker) (createdNamespace wrapped.Resource, err error) {
+	defaultNamespace := runner.resourceFactory.NewNamespaceUsingGeneratedName(runner.configuration.Test.DefaultNamespace.Basename)
+	scopedEventFactory.SayThatWeAreTryingToCreateAResource(defaultNamespace)
+
+	if err := defaultNamespace.Create(); err != nil {
+		scopedEventFactory.SayThatWeFailedToCreateAResource(defaultNamespace, err)
+		return nil, err
+	}
+
+	scopedEventFactory.SayThatAResourceWasCreatedSuccessfully(defaultNamespace)
 	tracker.AddCreatedResource(defaultNamespace)
 
 	return defaultNamespace, nil
 }
 
-func (runner *TestRunner) handleDeletionsForPendingCreatedResources(eventChannel chan<- *Event, scopedEventFactory *ScopedEventFactory, tracker *wrapped.ResourceTracker) {
+func (runner *TestRunner) handleDeletionsForPendingCreatedResources(eventChannel chan<- *Event, scopedEventFactory *ScopedEventParrot, tracker *wrapped.ResourceTracker) {
 	deletionResult := tracker.AttemptToDeleteAllAsYetUndeletedResources()
 	for _, r := range deletionResult.SuccessfullyDeletedResources {
-		eventChannel <- scopedEventFactory.NewSuccessfullyDeletedResourceEvent(r)
+		scopedEventFactory.SayThatAResourceWasSuccessfullyDeleted(r)
 	}
 
 	if deletionResult.ResourceForWhichDeletionFailed != nil {
-		eventChannel <- scopedEventFactory.NewFailedToDeleteResourceEvent(deletionResult.ResourceForWhichDeletionFailed, deletionResult.Error)
+		scopedEventFactory.SayThatWeFailedToDeleteAResource(deletionResult.ResourceForWhichDeletionFailed, deletionResult.Error)
 	}
 }
 

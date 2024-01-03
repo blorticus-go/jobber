@@ -124,10 +124,6 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 		l.SayContextually(event.Context, Successfully, "Completed Job Named [%s] in Namespace [%s]", resourceDescriptionFor(event.Resource), event.Resource.NamespaceName())
 	case jobber.JobFailedToCompleteSuccessfully:
 		l.SayContextually(event.Context, FailedTo, "Complete Job Named [%s] in Namespace [%s]: %s", resourceDescriptionFor(event.Resource), event.Resource.NamespaceName(), event.Error)
-	case jobber.TryingToCreateDirectory:
-		l.SayContextually(event.Context, TryingTo, "Create Directory [%s]", event.FileOrDirectoryPath)
-	case jobber.TryingToCreateFile:
-		l.SayContextually(event.Context, TryingTo, "Create File [%s]", event.FileOrDirectoryPath)
 	case jobber.SuccessfullyCreatedFile:
 		l.SayContextually(event.Context, Successfully, "Created Directory [%s]", event.FileOrDirectoryPath)
 	case jobber.SuccessfullyCreatedDirectory:
@@ -136,5 +132,9 @@ func (l *Logger) LogEventMessage(event *jobber.Event) {
 		l.SayContextually(event.Context, FailedTo, "Create File [%s]: %s", event.FileOrDirectoryPath, event.Error)
 	case jobber.FailedToCreateDirectory:
 		l.SayContextually(event.Context, FailedTo, "Create Directory [%s]: %s", event.FileOrDirectoryPath, event.Error)
+	case jobber.FailedToProcessPipelineDescriptors:
+		l.SayContextually(event.Context, FailedTo, "Process Pipeline Action Descriptors: %s", event.Error)
+	case jobber.FailedToProcessTemplate:
+		l.SayContextually(event.Context, FailedTo, "Process A Template: %s", event.Error)
 	}
 }

@@ -9,7 +9,7 @@ import (
 type ActionMessageType int
 
 const (
-	ActionCompleted ActionMessageType = iota
+	ActionCompletedSuccessfully ActionMessageType = iota
 	ResourceCreatedSuccessfully
 	ResourceCreationFailed
 	TemplateExpandedSuccessfully
@@ -25,8 +25,8 @@ const (
 
 func ActionMessageTypeToString(amt ActionMessageType) string {
 	switch amt {
-	case ActionCompleted:
-		return "ActionCompleted"
+	case ActionCompletedSuccessfully:
+		return "ActionCompletedSuccessfully"
 	case ResourceCreatedSuccessfully:
 		return "ResourceCreatedSuccessfully"
 	case ResourceCreationFailed:
@@ -72,9 +72,9 @@ type ActionMessage struct {
 	Error     error
 }
 
-func NewActionCompletedMessage() *ActionMessage {
+func NewActionCompletedSuccessfullyMessage() *ActionMessage {
 	return &ActionMessage{
-		Type: ActionCompleted,
+		Type: ActionCompletedSuccessfully,
 	}
 }
 
