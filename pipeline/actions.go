@@ -22,6 +22,21 @@ const (
 	Executable
 )
 
+func ActionTypeToString(at ActionType) string {
+	switch at {
+	case InvalidActionType:
+		return "InvalidActionType"
+	case TemplatedResource:
+		return "TempatedResource"
+	case ValuesTransform:
+		return "ValuesTransform"
+	case Executable:
+		return "Executable"
+	}
+
+	return ""
+}
+
 func descriptorStringToActionType(actionTypeAsAString string) (ActionType, error) {
 	switch actionTypeAsAString {
 	case "templates":
@@ -260,7 +275,12 @@ func (action *TemplatedResourceAction) Run(pipelineVariables *Variables, message
 
 	decodedYamlDocuments, err := action.mechanic.ProcessBytesBufferAsYamlDocuments(templateBuffer)
 	if err != nil {
-		messages <- NewResourceYamlParseFailed(err)
+		messages <- NewResourceYamlParseFailed(fmt.Errorf("here: %s", err))
+		return
+	}
+
+	if len(decodedYamlDocuments) == 0 {
+		messages <- NewResourceYamlParseFailed(fmt.Errorf("no non-empty yaml documents found"))
 		return
 	}
 
@@ -277,7 +297,7 @@ func (action *TemplatedResourceAction) Run(pipelineVariables *Variables, message
 		}
 
 		switch wrapped.GroupVersionKindAsAString(resource.GroupVersionKind()) {
-		case "/v1/Pod":
+		case "v1/Pod":
 			messages <- NewWaitingForPodRunningState(resource)
 
 			if err := action.mechanic.TreatResourceAsPodAndWaitForRunningState(resource); err != nil {

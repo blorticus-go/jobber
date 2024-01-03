@@ -23,6 +23,37 @@ const (
 	WaitingForPodRunningState
 )
 
+func ActionMessageTypeToString(amt ActionMessageType) string {
+	switch amt {
+	case ActionCompleted:
+		return "ActionCompleted"
+	case ResourceCreatedSuccessfully:
+		return "ResourceCreatedSuccessfully"
+	case ResourceCreationFailed:
+		return "ResourceCreationFailed"
+	case TemplateExpandedSuccessfully:
+		return "TemplateExpandedSuccessfully"
+	case TemplateExpansionFailed:
+		return "TemplateExpansionFailed"
+	case ResourceYamlParseFailed:
+		return "ResourceYamlParseFailed"
+	case ExecutionCompletedSuccessfully:
+		return "ExecutionCompletedSuccessfully"
+	case ExecutionFailed:
+		return "ExecutionFailed"
+	case VariablesTransformCompletedSuccessfully:
+		return "VariablesTransformCompletedSuccessfully"
+	case VariablesTransformFailed:
+		return "VariablesTransformFailed"
+	case WaitingForJobCompletion:
+		return "WaitingForJobCompletion"
+	case WaitingForPodRunningState:
+		return "WaitingForPodRunningState"
+	}
+
+	return ""
+}
+
 type ActionExecution struct {
 	StdoutBuffer *bytes.Buffer
 	StderrBuffer *bytes.Buffer
@@ -64,7 +95,7 @@ func NewResourceCreationFailed(resource wrapped.Resource, err error) *ActionMess
 
 func NewTemplateExpandedSuccessfully(templateBuffer *bytes.Buffer) *ActionMessage {
 	return &ActionMessage{
-		Type: ResourceCreationFailed,
+		Type: TemplateExpandedSuccessfully,
 		Template: &ActionTemplateExpansion{
 			ExpandedTemplateBuffer: templateBuffer,
 		},
@@ -73,21 +104,21 @@ func NewTemplateExpandedSuccessfully(templateBuffer *bytes.Buffer) *ActionMessag
 
 func NewTemplateExpansionFailed(err error) *ActionMessage {
 	return &ActionMessage{
-		Type:  ResourceCreationFailed,
+		Type:  TemplateExpansionFailed,
 		Error: err,
 	}
 }
 
 func NewResourceYamlParseFailed(err error) *ActionMessage {
 	return &ActionMessage{
-		Type:  ResourceCreationFailed,
+		Type:  ResourceYamlParseFailed,
 		Error: err,
 	}
 }
 
 func NewExecutionCompletedSuccessfully(stdoutBuffer *bytes.Buffer, stderrBuffer *bytes.Buffer) *ActionMessage {
 	return &ActionMessage{
-		Type: ResourceCreationFailed,
+		Type: ExecutionCompletedSuccessfully,
 		Execution: &ActionExecution{
 			StdoutBuffer: stdoutBuffer,
 			StderrBuffer: stderrBuffer,
@@ -97,7 +128,7 @@ func NewExecutionCompletedSuccessfully(stdoutBuffer *bytes.Buffer, stderrBuffer 
 
 func NewExecutionFailed(stdoutBuffer, stderrBuffer *bytes.Buffer, err error) *ActionMessage {
 	return &ActionMessage{
-		Type: ResourceCreationFailed,
+		Type: ExecutionFailed,
 		Execution: &ActionExecution{
 			StdoutBuffer: stdoutBuffer,
 			StderrBuffer: stderrBuffer,
@@ -108,7 +139,7 @@ func NewExecutionFailed(stdoutBuffer, stderrBuffer *bytes.Buffer, err error) *Ac
 
 func NewVariablesTransformCompletedSuccessfully(outputVariables *Variables, stdoutBuffer, stderrBuffer *bytes.Buffer) *ActionMessage {
 	return &ActionMessage{
-		Type: ResourceCreationFailed,
+		Type: VariablesTransformCompletedSuccessfully,
 		Execution: &ActionExecution{
 			StdoutBuffer: stdoutBuffer,
 			StderrBuffer: stderrBuffer,
@@ -119,7 +150,7 @@ func NewVariablesTransformCompletedSuccessfully(outputVariables *Variables, stdo
 
 func NewVariablesTransformFailed(stdoutBuffer, stderrBuffer *bytes.Buffer, err error) *ActionMessage {
 	return &ActionMessage{
-		Type: ResourceCreationFailed,
+		Type: VariablesTransformFailed,
 		Execution: &ActionExecution{
 			StdoutBuffer: stdoutBuffer,
 			StderrBuffer: stderrBuffer,
@@ -130,14 +161,14 @@ func NewVariablesTransformFailed(stdoutBuffer, stderrBuffer *bytes.Buffer, err e
 
 func NewWaitingForJobCompletion(resource wrapped.Resource) *ActionMessage {
 	return &ActionMessage{
-		Type:     ResourceCreationFailed,
+		Type:     WaitingForJobCompletion,
 		Resource: resource,
 	}
 }
 
 func NewWaitingForPodRunningState(resource wrapped.Resource) *ActionMessage {
 	return &ActionMessage{
-		Type:     ResourceCreationFailed,
+		Type:     WaitingForPodRunningState,
 		Resource: resource,
 	}
 }

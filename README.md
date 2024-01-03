@@ -222,6 +222,4 @@ type Pod struct {}
 type Namespace struct {}
 type ServiceAccount struct {}
 
-
-
 ```
