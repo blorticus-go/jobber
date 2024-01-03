@@ -184,3 +184,44 @@ Producer:
 sed 's/^( +)ImageVersion: .+/   \1ImageVersion: 0.9.0'
 ```
 
+### Thoughts
+
+```go
+type UpdatableResource interface {
+  UpdateStatus() error
+}
+
+type Resource interface {
+  Name() string
+  NamespaceName() string
+  GroupVersionKind() schema.GroupVersionKind
+	GroupVersionResource() schema.GroupVersionResource
+  ToGeneric() GenericResource
+}
+
+type GenericResource interface {
+	Create() error
+	Delete() error
+	UnstructuredApiObject() *unstructured.Unstructured
+	UnstructuredMap() map[string]any
+	IsA(gvk schema.GroupVersionKind) bool
+	IsNotA(gvk schema.GroupVersionKind) bool
+}
+
+type JobResource interface {
+  WaitForCompletion() error
+}
+
+type PodResource interface {
+  WaitForRunningState(maximumTimeToWait time.Duration) error
+}
+
+type Generic struct {}
+type Job struct {}
+type Pod struct {}
+type Namespace struct {}
+type ServiceAccount struct {}
+
+
+
+```

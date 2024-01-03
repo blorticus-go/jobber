@@ -7,14 +7,14 @@ import (
 )
 
 type TestRunner struct {
-	configuration *Configuration
-	apiClient     *api.Client
+	configuration   *Configuration
+	resourceFactory wrapped.ResourceFactory
 }
 
 func NewTestRunner(testConfiguration *Configuration, apiClient *api.Client) *TestRunner {
 	return &TestRunner{
-		configuration: testConfiguration,
-		apiClient:     apiClient,
+		configuration:   testConfiguration,
+		resourceFactory: wrapped.NewFactory(apiClient),
 	}
 }
 
@@ -51,8 +51,8 @@ func (runner *TestRunner) RunTest(eventChannel chan<- *Event) {
 	eventChannel <- scopedEventFactory.NewTestCompletedSuccessfullyEvent()
 }
 
-func (runner *TestRunner) handleDefaultNamespaceCreation(eventChannel chan<- *Event, scopedEventFactory *ScopedEventFactory, tracker *wrapped.ResourceTracker) (createdNamespace *wrapped.Namespace, err error) {
-	defaultNamespace := wrapped.NewNamespaceUsingGeneratedName(runner.configuration.Test.DefaultNamespace.Basename, runner.apiClient)
+func (runner *TestRunner) handleDefaultNamespaceCreation(eventChannel chan<- *Event, scopedEventFactory *ScopedEventFactory, tracker *wrapped.ResourceTracker) (createdNamespace wrapped.Resource, err error) {
+	defaultNamespace := runner.resourceFactory.NewNamespaceUsingGeneratedName(runner.configuration.Test.DefaultNamespace.Basename)
 	eventChannel <- scopedEventFactory.NewTryingToCreateResourceEvent(defaultNamespace)
 
 	if err := defaultNamespace.Create(); err != nil {

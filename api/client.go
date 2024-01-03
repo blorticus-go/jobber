@@ -13,11 +13,6 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-var dpk = metav1.DeletePropagationForeground
-var defaultResourceDeletionOptions = metav1.DeleteOptions{
-	PropagationPolicy: &dpk,
-}
-
 type Client struct {
 	restConfig      *rest.Config
 	clientSet       *kubernetes.Clientset

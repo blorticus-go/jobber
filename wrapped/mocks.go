@@ -1,4 +1,4 @@
-package wrapped_test
+package wrapped
 
 import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -50,4 +50,39 @@ func (r *MockResource) UnstructuredApiObject() *unstructured.Unstructured {
 
 func (r *MockResource) UnstructuredMap() map[string]any {
 	return r.R_UnstructuredApiObject.Object
+}
+
+func (r *MockResource) IsA(gvk schema.GroupVersionKind) bool {
+	return gvk.Group == "mock" && gvk.Version == "v1" && gvk.Kind == "Resource"
+}
+
+func (r *MockResource) IsNotA(gvk schema.GroupVersionKind) bool {
+	return !r.IsA(gvk)
+}
+
+type MockFactory struct{}
+
+func NewMockFactory() *MockFactory {
+	return &MockFactory{}
+}
+
+func (factory *MockFactory) NewResourceFromMap(objectMap map[string]any) Resource {
+	return nil
+}
+
+func (factory *MockFactory) NewResourceForNamespaceFromMap(objectMap map[string]any, inNamespaceName string) Resource {
+	return nil
+
+}
+
+func (factory *MockFactory) NewNamespaceUsingGeneratedName(basename string) Resource {
+	return nil
+}
+
+func (factory *MockFactory) CoerceResourceToPod(r Resource) PodResource {
+	return nil
+}
+
+func (factory *MockFactory) CoerceResourceToJob(r Resource) JobResource {
+	return nil
 }

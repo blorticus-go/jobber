@@ -103,7 +103,7 @@ func TestMultipassGoodTracker(t *testing.T) {
 		t.Fatalf("NewResourceTracker() returned nil")
 	}
 
-	for _, r := range []*MockResource{
+	for _, r := range []*wrapped.MockResource{
 		{R_Name: "a", R_NamespaceName: "1"},
 		{R_Name: "b", R_NamespaceName: "1"},
 		{R_Name: "c", R_NamespaceName: "2"},
@@ -116,9 +116,9 @@ func TestMultipassGoodTracker(t *testing.T) {
 	if err := CompareDeletionResults(
 		&ExpectedDeletionResults{
 			SuccessfullyDeletedResources: []wrapped.Resource{
-				&MockResource{R_Name: "c", R_NamespaceName: "2"},
-				&MockResource{R_Name: "b", R_NamespaceName: "1"},
-				&MockResource{R_Name: "a", R_NamespaceName: "1"},
+				&wrapped.MockResource{R_Name: "c", R_NamespaceName: "2"},
+				&wrapped.MockResource{R_Name: "b", R_NamespaceName: "1"},
+				&wrapped.MockResource{R_Name: "a", R_NamespaceName: "1"},
 			},
 		},
 		results,
@@ -132,7 +132,7 @@ func TestMultipassGoodTracker(t *testing.T) {
 		t.Fatalf("expected tracker to be empty after complete deletion, got %s", err)
 	}
 
-	for _, r := range []*MockResource{
+	for _, r := range []*wrapped.MockResource{
 		{R_Name: "w", R_NamespaceName: "1"},
 		{R_Name: "x", R_NamespaceName: "1"},
 		{R_Name: "y", R_NamespaceName: "2"},
@@ -146,10 +146,10 @@ func TestMultipassGoodTracker(t *testing.T) {
 	if err := CompareDeletionResults(
 		&ExpectedDeletionResults{
 			SuccessfullyDeletedResources: []wrapped.Resource{
-				&MockResource{R_Name: "z", R_NamespaceName: "3"},
-				&MockResource{R_Name: "y", R_NamespaceName: "2"},
-				&MockResource{R_Name: "x", R_NamespaceName: "1"},
-				&MockResource{R_Name: "w", R_NamespaceName: "1"},
+				&wrapped.MockResource{R_Name: "z", R_NamespaceName: "3"},
+				&wrapped.MockResource{R_Name: "y", R_NamespaceName: "2"},
+				&wrapped.MockResource{R_Name: "x", R_NamespaceName: "1"},
+				&wrapped.MockResource{R_Name: "w", R_NamespaceName: "1"},
 			},
 		},
 		results,
@@ -172,7 +172,7 @@ func TestMultpassWithError(t *testing.T) {
 		t.Fatalf("NewResourceTracker() returned nil")
 	}
 
-	for _, r := range []*MockResource{
+	for _, r := range []*wrapped.MockResource{
 		{R_Name: "a", R_NamespaceName: "1"},
 		{R_Name: "b", R_NamespaceName: "1"},
 		{R_Name: "c", R_NamespaceName: "2", R_DeleteError: fmt.Errorf("delete error")},
@@ -186,9 +186,9 @@ func TestMultpassWithError(t *testing.T) {
 	if err := CompareDeletionResults(
 		&ExpectedDeletionResults{
 			SuccessfullyDeletedResources: []wrapped.Resource{
-				&MockResource{R_Name: "d", R_NamespaceName: "3"},
+				&wrapped.MockResource{R_Name: "d", R_NamespaceName: "3"},
 			},
-			ResourceForWhichDeletionFailed: &MockResource{R_Name: "c", R_NamespaceName: "2"},
+			ResourceForWhichDeletionFailed: &wrapped.MockResource{R_Name: "c", R_NamespaceName: "2"},
 			ExpectAnError:                  true,
 		},
 		results,
@@ -201,7 +201,7 @@ func TestMultpassWithError(t *testing.T) {
 	if err := CompareDeletionResults(
 		&ExpectedDeletionResults{
 			SuccessfullyDeletedResources:   []wrapped.Resource{},
-			ResourceForWhichDeletionFailed: &MockResource{R_Name: "c", R_NamespaceName: "2"},
+			ResourceForWhichDeletionFailed: &wrapped.MockResource{R_Name: "c", R_NamespaceName: "2"},
 			ExpectAnError:                  true,
 		},
 		results,

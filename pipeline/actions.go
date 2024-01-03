@@ -9,26 +9,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/blorticus-go/jobber/api"
 	"github.com/blorticus-go/jobber/wrapped"
 	"gopkg.in/yaml.v2"
-)
-
-type ActionMessageType int
-
-const (
-	ActionCompleted ActionMessageType = iota
-	ResourceCreatedSuccessfully
-	ResourceCreationFailed
-	TemplateExpandedSuccessfully
-	TemplateExpansionFailed
-	ResourceYamlParseFailed
-	ExecutionCompletedSuccessfully
-	ExecutionFailed
-	VariablesTransformCompletedSuccessfully
-	VariablesTransformFailed
-	WaitingForJobCompletion
-	WaitingForPodRunningState
 )
 
 type ActionType int
@@ -39,31 +21,6 @@ const (
 	ValuesTransform
 	Executable
 )
-
-type ActionOutcomeExecution struct {
-	StdoutBuffer *bytes.Buffer
-	StderrBuffer *bytes.Buffer
-}
-
-type ActionOutcomeTemplateExpansion struct {
-	ExpandedTemplateBuffer *bytes.Buffer
-}
-
-type ActionOutcomeResourceCreation struct {
-	Resource wrapped.Resource
-}
-
-type ActionOutcome struct {
-	Execution         *ActionOutcomeExecution
-	TemplateExpansion *ActionOutcomeTemplateExpansion
-	ResourceCreation  *ActionOutcomeResourceCreation
-	Error             error
-}
-
-type ActionMessage struct {
-	Type    ActionMessageType
-	Outcome *ActionOutcome
-}
 
 func descriptorStringToActionType(actionTypeAsAString string) (ActionType, error) {
 	switch actionTypeAsAString {
@@ -91,20 +48,133 @@ type Action interface {
 	Run(variables *Variables, messages chan<- *ActionMessage)
 }
 
-type ActionFactory struct {
-	templateExpansionFuncMap template.FuncMap
-	apiClient                *api.Client
+type ActionMechanic interface {
+	ExpandFileAsTemplate(filePath string, templateFuncMap template.FuncMap, pipelineVariables *Variables) (expandedBuffer *bytes.Buffer, err error)
+	ProcessBytesBufferAsYamlDocuments(buff *bytes.Buffer) (nonEmptyYamlDocuments []map[string]any, err error)
+	ConvertDecodedYamlToResource(decodedYaml map[string]any, defaultNamespaceName string) (wrapped.Resource, error)
+	CreateResource(resource wrapped.Resource) error
+	TreatResourceAsPodAndWaitForRunningState(r wrapped.Resource) error
+	TreatResourceAsAJobAndWaitForCompletion(r wrapped.Resource) error
 }
 
-func NewActionFactory(apiClient *api.Client, templateExpansionFuncMap template.FuncMap) *ActionFactory {
+type ActionFactory struct {
+	templateExpansionFuncMap template.FuncMap
+	resourceFactory          wrapped.ResourceFactory
+	actionMechanic           ActionMechanic
+}
+
+func NewActionFactory(resourceFactory wrapped.ResourceFactory, templateExpansionFuncMap template.FuncMap) *ActionFactory {
 	if templateExpansionFuncMap == nil {
 		templateExpansionFuncMap = make(template.FuncMap)
 	}
 
 	return &ActionFactory{
 		templateExpansionFuncMap: templateExpansionFuncMap,
-		apiClient:                apiClient,
+		resourceFactory:          resourceFactory,
+		actionMechanic:           NewDefaultActionMechanic(resourceFactory),
 	}
+}
+
+func (factory *ActionFactory) ReplaceActionMechanicWith(mechanic ActionMechanic) {
+	factory.actionMechanic = mechanic
+}
+
+type DefaultActionMechanic struct {
+	resourceFactory wrapped.ResourceFactory
+}
+
+func NewDefaultActionMechanic(resourceFactory wrapped.ResourceFactory) *DefaultActionMechanic {
+	return &DefaultActionMechanic{
+		resourceFactory: resourceFactory,
+	}
+}
+
+func (m *DefaultActionMechanic) ExpandFileAsTemplate(filePath string, templateFuncMap template.FuncMap, pipelineVariables *Variables) (expandedBuffer *bytes.Buffer, err error) {
+	tmpl, err := template.New(filepath.Base(filePath)).Funcs(templateFuncMap).ParseFiles(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse resource template at (%s): %s", filePath, err)
+	}
+
+	templateBuffer := new(bytes.Buffer)
+
+	if err = tmpl.Execute(templateBuffer, pipelineVariables); err != nil {
+		return nil, fmt.Errorf("failed to expand resource template at (%s): %s", filePath, err)
+	}
+
+	return templateBuffer, nil
+}
+
+func (m *DefaultActionMechanic) ProcessBytesBufferAsYamlDocuments(buff *bytes.Buffer) (nonEmptyYamlDocuments []map[string]any, err error) {
+	yamlDocuments := yamlDocumentSplitPattern.Split(buff.String(), -1)
+
+	yamlDocumentsThatAreNotEmpty := make([]string, 0, len(yamlDocuments))
+	for _, yamlDocument := range yamlDocuments {
+		if !emptyYamlDocumentMatch.MatchString(yamlDocument) {
+			yamlDocumentsThatAreNotEmpty = append(yamlDocumentsThatAreNotEmpty, yamlDocument)
+		}
+	}
+
+	decodedYamlDocuments := make([]map[string]any, 0, len(yamlDocumentsThatAreNotEmpty))
+	for _, yamlDocumentString := range yamlDocumentsThatAreNotEmpty {
+		decoder := yaml.NewDecoder(strings.NewReader(yamlDocumentString))
+		decodedYaml := make(map[string]any)
+
+		if err = decoder.Decode(decodedYaml); err != nil {
+			return nil, fmt.Errorf("failed to decode resource yaml: %s", err)
+		}
+
+		if len(decodedYaml) > 0 {
+			decodedYamlDocuments = append(decodedYamlDocuments, decodedYaml)
+		}
+	}
+
+	return decodedYamlDocuments, nil
+}
+
+func (m *DefaultActionMechanic) ConvertDecodedYamlToResource(decodedYaml map[string]any, defaultNamespaceName string) (wrapped.Resource, error) {
+	resource := m.resourceFactory.NewResourceFromMap(decodedYaml)
+	if resource.NamespaceName() == "" {
+		return m.resourceFactory.NewResourceForNamespaceFromMap(decodedYaml, defaultNamespaceName), nil
+	}
+
+	return resource, nil
+}
+
+func (m *DefaultActionMechanic) CreateResource(resource wrapped.Resource) error {
+	if err := resource.Create(); err != nil {
+		return fmt.Errorf("failed to create resource: %s", err)
+	}
+
+	return nil
+}
+
+func (m *DefaultActionMechanic) TreatResourceAsPodAndWaitForRunningState(resource wrapped.Resource) error {
+	pod, err := m.resourceFactory.CoerceResourceToPod(resource)
+	if err != nil {
+		return fmt.Errorf("failed to coerce Generic resource to Pod resource: %s", err)
+	}
+
+	if err := pod.WaitForRunningState(60 * time.Second); err != nil {
+		if err == wrapped.ErrorTimeExceeded {
+			err = fmt.Errorf("timed out waiting for Running state")
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (m *DefaultActionMechanic) TreatResourceAsAJobAndWaitForCompletion(resource wrapped.Resource) error {
+	job, err := m.resourceFactory.CoerceResourceToJob(resource)
+	if err != nil {
+		return fmt.Errorf("failed to coerce Generic resource to Job resource: %s", err)
+	}
+
+	if err := job.WaitForCompletion(); err != nil {
+		return err
+	}
+
+	return err
 }
 
 func actionDescriptorStringToNormalizedSet(descriptor string) (actionType ActionType, targetPathElements []string, err error) {
@@ -138,10 +208,7 @@ func (factory *ActionFactory) NewActionFromStringDescriptor(descriptor string, p
 
 	switch actionType {
 	case TemplatedResource:
-		return &TemplatedResourceAction{
-			pathToResourceTemplate: actionFullyQualifiedPath,
-			expansionFuncMap:       factory.templateExpansionFuncMap,
-		}, nil
+		return NewTemplatedResourceAction(actionFullyQualifiedPath, factory.templateExpansionFuncMap, factory.actionMechanic), nil
 	case ValuesTransform:
 		return &ValuesTransformAction{
 			pathToTransformExecutable: actionFullyQualifiedPath,
@@ -159,7 +226,15 @@ func (factory *ActionFactory) NewActionFromStringDescriptor(descriptor string, p
 type TemplatedResourceAction struct {
 	pathToResourceTemplate string
 	expansionFuncMap       template.FuncMap
-	apiClient              *api.Client
+	mechanic               ActionMechanic
+}
+
+func NewTemplatedResourceAction(pathToResourceTemplate string, expansionFuncMap template.FuncMap, mechanic ActionMechanic) *TemplatedResourceAction {
+	return &TemplatedResourceAction{
+		pathToResourceTemplate: pathToResourceTemplate,
+		expansionFuncMap:       expansionFuncMap,
+		mechanic:               mechanic,
+	}
 }
 
 func (action *TemplatedResourceAction) Type() ActionType {
@@ -171,176 +246,55 @@ var emptyYamlDocumentMatch = regexp.MustCompile(`(?s)^\s*$`)
 
 func (action *TemplatedResourceAction) Run(pipelineVariables *Variables, messages chan<- *ActionMessage) {
 	defer func() {
-		messages <- &ActionMessage{
-			Type: ActionCompleted,
-		}
+		messages <- NewActionCompletedMessage()
+		close(messages)
 	}()
 
-	tmpl, err := template.New(filepath.Base(action.pathToResourceTemplate)).Funcs(action.expansionFuncMap).ParseFiles(action.pathToResourceTemplate)
+	templateBuffer, err := action.mechanic.ExpandFileAsTemplate(action.pathToResourceTemplate, action.expansionFuncMap, pipelineVariables)
 	if err != nil {
-		messages <- &ActionMessage{
-			Type: TemplateExpansionFailed,
-			Outcome: &ActionOutcome{
-				Error: fmt.Errorf("failed to parse resource template at (%s): %s", action.pathToResourceTemplate, err),
-			},
-		}
+		messages <- NewTemplateExpansionFailed(err)
 		return
 	}
 
-	templateBuffer := new(bytes.Buffer)
+	messages <- NewTemplateExpandedSuccessfully(templateBuffer)
 
-	if err = tmpl.Execute(templateBuffer, pipelineVariables); err != nil {
-		messages <- &ActionMessage{
-			Type: TemplateExpansionFailed,
-			Outcome: &ActionOutcome{
-				Error: fmt.Errorf("failed to expand resource template: %s", err),
-			},
-		}
+	decodedYamlDocuments, err := action.mechanic.ProcessBytesBufferAsYamlDocuments(templateBuffer)
+	if err != nil {
+		messages <- NewResourceYamlParseFailed(err)
 		return
 	}
 
-	messages <- &ActionMessage{
-		Type: TemplateExpandedSuccessfully,
-		Outcome: &ActionOutcome{
-			TemplateExpansion: &ActionOutcomeTemplateExpansion{
-				ExpandedTemplateBuffer: templateBuffer,
-			},
-		},
-	}
-
-	yamlDocuments := yamlDocumentSplitPattern.Split(templateBuffer.String(), -1)
-
-	yamlDocumentsThatAreNotEmpty := make([]string, 0, len(yamlDocuments))
-	for _, yamlDocument := range yamlDocuments {
-		if !emptyYamlDocumentMatch.MatchString(yamlDocument) {
-			yamlDocumentsThatAreNotEmpty = append(yamlDocumentsThatAreNotEmpty, yamlDocument)
-		}
-	}
-
-	for _, yamlDocumentString := range yamlDocumentsThatAreNotEmpty {
-		decoder := yaml.NewDecoder(strings.NewReader(yamlDocumentString))
-		decodedYaml := make(map[string]any)
-
-		if err = decoder.Decode(decodedYaml); err != nil {
-			messages <- &ActionMessage{
-				Type: ResourceYamlParseFailed,
-				Outcome: &ActionOutcome{
-					Error: fmt.Errorf("failed to decode resource yaml: %s", err),
-				},
-			}
+	for _, decodedYaml := range decodedYamlDocuments {
+		resource, err := action.mechanic.ConvertDecodedYamlToResource(decodedYaml, pipelineVariables.Runtime.DefaultNamespace.Name)
+		if err != nil {
+			messages <- NewResourceCreationFailed(resource, err)
 			return
 		}
 
-		if len(decodedYaml) == 0 {
-			continue
-		}
-
-		resource := wrapped.NewResourceFromMap(decodedYaml, action.apiClient)
-
-		if resource.NamespaceName() == "" {
-			resource.SetNamespaceWithoutCommit(pipelineVariables.Runtime.DefaultNamespace.Name)
-		}
-
-		if err := resource.Create(); err != nil {
-			messages <- &ActionMessage{
-				Type: ResourceCreationFailed,
-				Outcome: &ActionOutcome{
-					ResourceCreation: &ActionOutcomeResourceCreation{
-						Resource: resource,
-					},
-					Error: fmt.Errorf("failed to create resource: %s", err),
-				},
-			}
+		if err := action.mechanic.CreateResource(resource); err != nil {
+			messages <- NewResourceCreationFailed(resource, err)
 			return
 		}
 
-		switch resource.GroupVersionKindAsAString() {
+		switch wrapped.GroupVersionKindAsAString(resource.GroupVersionKind()) {
 		case "/v1/Pod":
-			pod, err := wrapped.NewPodFromGeneric(resource)
-			if err != nil {
-				messages <- &ActionMessage{
-					Type: ResourceCreationFailed,
-					Outcome: &ActionOutcome{
-						ResourceCreation: &ActionOutcomeResourceCreation{
-							Resource: resource,
-						},
-						Error: fmt.Errorf("failed to coerce Generic resource to Pod resource: %s", err),
-					},
-				}
-				return
-			}
+			messages <- NewWaitingForPodRunningState(resource)
 
-			messages <- &ActionMessage{
-				Type: WaitingForPodRunningState,
-				Outcome: &ActionOutcome{
-					ResourceCreation: &ActionOutcomeResourceCreation{
-						Resource: resource,
-					},
-				},
-			}
-
-			if err := pod.WaitForRunningState(60 * time.Second); err != nil {
-				if err == wrapped.ErrorTimeExceeded {
-					err = fmt.Errorf("timed out waiting for Running state")
-				}
-				messages <- &ActionMessage{
-					Type: ResourceCreationFailed,
-					Outcome: &ActionOutcome{
-						ResourceCreation: &ActionOutcomeResourceCreation{
-							Resource: resource,
-						},
-						Error: err,
-					},
-				}
+			if err := action.mechanic.TreatResourceAsPodAndWaitForRunningState(resource); err != nil {
+				messages <- NewResourceCreationFailed(resource, err)
 				return
 			}
 
 		case "batch/v1/Job":
-			job, err := wrapped.NewJobFromGeneric(resource)
-			if err != nil {
-				messages <- &ActionMessage{
-					Type: ResourceCreationFailed,
-					Outcome: &ActionOutcome{
-						ResourceCreation: &ActionOutcomeResourceCreation{
-							Resource: resource,
-						},
-						Error: fmt.Errorf("failed to coerce Generic resource to Job resource: %s", err),
-					},
-				}
-				return
-			}
+			messages <- NewWaitingForJobCompletion(resource)
 
-			messages <- &ActionMessage{
-				Type: WaitingForJobCompletion,
-				Outcome: &ActionOutcome{
-					ResourceCreation: &ActionOutcomeResourceCreation{
-						Resource: job,
-					},
-				},
-			}
-
-			if err := job.WaitForJobCompletion(); err != nil {
-				messages <- &ActionMessage{
-					Type: ResourceCreationFailed,
-					Outcome: &ActionOutcome{
-						ResourceCreation: &ActionOutcomeResourceCreation{
-							Resource: job,
-						},
-						Error: err,
-					},
-				}
+			if err := action.mechanic.TreatResourceAsAJobAndWaitForCompletion(resource); err != nil {
+				messages <- NewResourceCreationFailed(resource, err)
 				return
 			}
 		}
 
-		messages <- &ActionMessage{
-			Type: ResourceCreatedSuccessfully,
-			Outcome: &ActionOutcome{
-				ResourceCreation: &ActionOutcomeResourceCreation{
-					Resource: resource,
-				},
-			},
-		}
+		messages <- NewResourceCreatedSuccessfully(resource)
 	}
 }
 

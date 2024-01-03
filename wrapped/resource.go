@@ -24,6 +24,24 @@ type Resource interface {
 	UpdateStatus() error
 	UnstructuredApiObject() *unstructured.Unstructured
 	UnstructuredMap() map[string]any
+	IsA(gvk schema.GroupVersionKind) bool
+	IsNotA(gvk schema.GroupVersionKind) bool
+}
+
+type PodResource interface {
+	WaitForRunningState(maximumDurationToWait time.Duration) error
+}
+
+type JobResource interface {
+	WaitForCompletion() error
+}
+
+func GroupVersionKindAsAString(gvk schema.GroupVersionKind) string {
+	if gvk.Group == "" {
+		return fmt.Sprintf("%s/%s", gvk.Version, gvk.Kind)
+	}
+
+	return fmt.Sprintf("%s/%s/%s", gvk.Group, gvk.Version, gvk.Kind)
 }
 
 type Generic struct {
@@ -33,39 +51,12 @@ type Generic struct {
 	groupVersionKind      *schema.GroupVersionKind
 }
 
-func NewResourceFromMap(objectMap map[string]any, client *api.Client) *Generic {
-	return &Generic{
-		unstructuredApiObject: &unstructured.Unstructured{
-			Object: objectMap,
-		},
-		client: client,
-	}
-}
-
-func NewResourceForNamespaceFromMap(objectMap map[string]any, inNamespaceName string, client *api.Client) *Generic {
-	u := &unstructured.Unstructured{
-		Object: objectMap,
-	}
-
-	u.SetNamespace(inNamespaceName)
-
-	return &Generic{
-		unstructuredApiObject: u,
-		client:                client,
-	}
-}
-
 func (g *Generic) Name() string {
 	return g.unstructuredApiObject.GetName()
 }
 
 func (g *Generic) NamespaceName() string {
 	return g.unstructuredApiObject.GetNamespace()
-}
-
-func (g *Generic) SetNamespaceWithoutCommit(namespaceName string) *Generic {
-	g.unstructuredApiObject.SetNamespace(namespaceName)
-	return g
 }
 
 func (g *Generic) GroupVersionKind() schema.GroupVersionKind {
@@ -131,15 +122,6 @@ func (g *Generic) IsNotA(gvk schema.GroupVersionKind) bool {
 	return !g.IsA(gvk)
 }
 
-func (g *Generic) GroupVersionKindAsAString() string {
-	gvk := g.GroupVersionKind()
-	if gvk.Group == "" {
-		return fmt.Sprintf("%s/%s", gvk.Version, gvk.Kind)
-	}
-
-	return fmt.Sprintf("%s/%s/%s", gvk.Group, gvk.Version, gvk.Kind)
-}
-
 type Pod struct {
 	typedApiObject *corev1.Pod
 	client         *api.Client
@@ -167,22 +149,6 @@ var jobGvk = schema.GroupVersionKind{
 	Group:   "batch",
 	Version: "v1",
 	Kind:    "Job",
-}
-
-func NewPodFromGeneric(g *Generic) (*Pod, error) {
-	if g.IsNotA(podGvk) {
-		return nil, fmt.Errorf("requested type is (%s) not (v1/Pod)", g.GroupVersionKindAsAString())
-	}
-
-	typedApiObject := new(corev1.Pod)
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(g.UnstructuredMap(), typedApiObject); err != nil {
-		return nil, err
-	}
-
-	return &Pod{
-		typedApiObject: typedApiObject,
-		client:         g.client,
-	}, nil
 }
 
 func (p *Pod) Name() string {
@@ -240,6 +206,14 @@ func (p *Pod) UnstructuredMap() map[string]any {
 	return uMap
 }
 
+func (p *Pod) IsA(gvk schema.GroupVersionKind) bool {
+	return gvk.Group == "" && gvk.Version == "v1" && gvk.Kind == "Pod"
+}
+
+func (p *Pod) IsNotA(gvk schema.GroupVersionKind) bool {
+	return !p.IsA(gvk)
+}
+
 func (p *Pod) TypedApiObject() *corev1.Pod {
 	return p.typedApiObject
 }
@@ -264,9 +238,9 @@ type ServiceAccount struct {
 	client         *api.Client
 }
 
-func NewServiceAccountFromGeneric(g *Generic) (*ServiceAccount, error) {
+func ServiceAccountFromGeneric(g *Generic) (*ServiceAccount, error) {
 	if g.IsNotA(serviceAccountGvk) {
-		return nil, fmt.Errorf("requested type is (%s) not (v1/ServiceAccount)", g.GroupVersionKindAsAString())
+		return nil, fmt.Errorf("requested type is (%s) not (v1/ServiceAccount)", GroupVersionKindAsAString(g.GroupVersionKind()))
 	}
 
 	typedApiObject := new(corev1.ServiceAccount)
@@ -335,6 +309,14 @@ func (sa *ServiceAccount) UnstructuredMap() map[string]any {
 	return uMap
 }
 
+func (sa *ServiceAccount) IsA(gvk schema.GroupVersionKind) bool {
+	return gvk.Group == "" && gvk.Version == "v1" && gvk.Kind == "ServiceAccount"
+}
+
+func (sa *ServiceAccount) IsNotA(gvk schema.GroupVersionKind) bool {
+	return !sa.IsA(gvk)
+}
+
 func (sa *ServiceAccount) TypedApiObject() *corev1.ServiceAccount {
 	return sa.typedApiObject
 }
@@ -348,7 +330,7 @@ func (n *Namespace) TypedApiObject() *corev1.Namespace {
 	return n.typedApiObject
 }
 
-func NewNamespaceUsingGeneratedName(basename string, client *api.Client) *Namespace {
+func NamespaceUsingGeneratedName(basename string, client *api.Client) *Namespace {
 	return &Namespace{
 		client: client,
 		typedApiObject: &corev1.Namespace{
@@ -414,6 +396,14 @@ func (n *Namespace) UnstructuredMap() map[string]any {
 	return uMap
 }
 
+func (n *Namespace) IsA(gvk schema.GroupVersionKind) bool {
+	return gvk.Group == "" && gvk.Version == "v1" && gvk.Kind == "Namespace"
+}
+
+func (n *Namespace) IsNotA(gvk schema.GroupVersionKind) bool {
+	return !n.IsA(gvk)
+}
+
 type Job struct {
 	typedApiObject *batchv1.Job
 	client         *api.Client
@@ -423,9 +413,9 @@ func (resource *Job) TypedApiObject() *batchv1.Job {
 	return resource.typedApiObject
 }
 
-func NewJobFromGeneric(g *Generic) (*Job, error) {
+func JobFromGeneric(g *Generic) (*Job, error) {
 	if g.IsNotA(jobGvk) {
-		return nil, fmt.Errorf("requested type is (%s) not (batch/v1/Job)", g.GroupVersionKindAsAString())
+		return nil, fmt.Errorf("requested type is (%s) not (batch/v1/Job)", GroupVersionKindAsAString(g.GroupVersionKind()))
 	}
 
 	typedApiObject := new(batchv1.Job)
@@ -494,7 +484,15 @@ func (resource *Job) UnstructuredMap() map[string]any {
 	return uMap
 }
 
-func (resource *Job) WaitForJobCompletion() error {
+func (resource *Job) IsA(gvk schema.GroupVersionKind) bool {
+	return gvk.Group == "batch" && gvk.Version == "v1" && gvk.Kind == "Job"
+}
+
+func (resource *Job) IsNotA(gvk schema.GroupVersionKind) bool {
+	return !resource.IsA(gvk)
+}
+
+func (resource *Job) WaitForCompletion() error {
 	ticker := time.NewTicker(10 * time.Second)
 
 	for {
