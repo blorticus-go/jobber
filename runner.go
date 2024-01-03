@@ -179,7 +179,8 @@ func (runner *Runner) handleActionEvents(action *PipelineAction, actionEventChan
 		case JobCompleted:
 		case PodMovedToRunningState:
 		case ExecutionSuccessful:
-			eventHandler.sayThatExecutionSucceeded(action.Descriptor, nil, testUnit, testCase)
+			attemptToWriteExecutableOutputToFile(assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase).Executables, action.Descriptor, event.StdoutBuffer, event.StderrBuffer)
+			eventHandler.sayThatExecutionSucceeded(action.Descriptor, testUnit, testCase)
 		case ValuesTransformCompleted:
 		case AnErrorOccurred:
 			switch action.Type {
@@ -190,13 +191,20 @@ func (runner *Runner) handleActionEvents(action *PipelineAction, actionEventChan
 					eventHandler.sayThatResourceTemplateExpansionFailed(action.ActionFullyQualifiedPath, func() string { return "" }, event.Error, testUnit, testCase)
 				}
 			case Executable:
-				eventHandler.sayThatExecutionFailed(action.Descriptor, nil, testUnit, testCase)
+				attemptToWriteExecutableOutputToFile(assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase).Executables, action.Descriptor, event.StdoutBuffer, event.StderrBuffer)
+				eventHandler.sayThatExecutionFailed(action.Descriptor, event.Error, testUnit, testCase)
 			}
 			return event.Error
 		case ActionCompletedSuccessfully:
 			return nil
 		}
 	}
+}
+
+func attemptToWriteExecutableOutputToFile(executableAssetsBasePath string, actionDescriptor string, stdoutBuffer *bytes.Buffer, stderrBuffer *bytes.Buffer) {
+	outputFilesBasePath := deriveActionOutputFilesBasePath(executableAssetsBasePath, actionDescriptor)
+	writeReaderToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0640, stdoutBuffer)
+	writeReaderToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0640, stderrBuffer)
 }
 
 func writeExpandedTemplateForAction(action *PipelineAction, expandedTemplateBuffer *bytes.Buffer, assetsDirectoryPath string) {
@@ -206,23 +214,23 @@ func writeExpandedTemplateForAction(action *PipelineAction, expandedTemplateBuff
 	}
 }
 
-func writeActionOutcomeInformationToAssetsDirectory(action *PipelineAction, outcome *PipelineActionOutcome, testCaseAssetsDirectories *TestCaseDirectoryPaths) {
-	switch action.Type {
-	case TemplatedResource:
-		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ExpandedTemplates, action.ActionFullyQualifiedPath)
-		outcome.WriteOutputToFile(outputFilesBasePath, 0600)
+// func writeActionOutcomeInformationToAssetsDirectory(action *PipelineAction, outcome *PipelineActionOutcome, testCaseAssetsDirectories *TestCaseDirectoryPaths) {
+// 	switch action.Type {
+// 	case TemplatedResource:
+// 		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ExpandedTemplates, action.ActionFullyQualifiedPath)
+// 		outcome.WriteOutputToFile(outputFilesBasePath, 0600)
 
-	case Executable:
-		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.Executables, action.ActionFullyQualifiedPath)
-		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
-		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
+// 	case Executable:
+// 		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.Executables, action.ActionFullyQualifiedPath)
+// 		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
+// 		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
 
-	case ValuesTransform:
-		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ValuesTransforms, action.ActionFullyQualifiedPath)
-		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
-		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
-	}
-}
+// 	case ValuesTransform:
+// 		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ValuesTransforms, action.ActionFullyQualifiedPath)
+// 		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
+// 		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
+// 	}
+// }
 
 func deriveActionOutputFilesBasePath(depositDirectoryPath string, actionFullyQualifiedName string) string {
 	actionFullyQalifiedNamePathElements := strings.Split(actionFullyQualifiedName, "/")

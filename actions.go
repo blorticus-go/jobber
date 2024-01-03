@@ -263,8 +263,10 @@ func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables
 
 	if err := cmd.Run(); err != nil {
 		eventChannel <- &ActionEvent{
-			Type:  AnErrorOccurred,
-			Error: err,
+			Type:         AnErrorOccurred,
+			Error:        err,
+			StdoutBuffer: cmdStdout,
+			StderrBuffer: cmdStderr,
 		}
 		return
 	}

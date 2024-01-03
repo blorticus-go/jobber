@@ -137,10 +137,6 @@ func (resource *GenericK8sResource) Information() *K8sResourceInformation {
 	}
 }
 
-func (resource *GenericK8sResource) gkvLookupKey() gvkKey {
-	return gvkKey(fmt.Sprintf("%s\t%s\t%s", resource.Group, resource.Version, resource.Kind))
-}
-
 func (resource *GenericK8sResource) GvkString() string {
 	if resource.Group == "" {
 		return fmt.Sprintf("%s/%s", resource.Version, resource.Kind)

@@ -247,35 +247,27 @@ func (h *eventHandler) explainAttemptToCreateDefaultNamespace(createdNamespaceAp
 	}
 }
 
-func (h *eventHandler) sayThatExecutionFailed(actionId string, outcome *PipelineActionOutcome, testUnit *TestUnit, testCase *TestCase) {
+func (h *eventHandler) sayThatExecutionFailed(actionId string, err error, testUnit *TestUnit, testCase *TestCase) {
 	h.eventChannel <- &Event{
 		Type:    ExecutableRunFailure,
 		Context: EventContextFor(testUnit, testCase),
 		ExecuableInformation: &ExecutableEvent{
-			ExecutableName: actionId,
-			StdoutOutputRetriever: func() string {
-				return outcome.OutputBuffer.String()
-			},
-			StderrOutputRetriever: func() string {
-				return outcome.StderrBuffer.String()
-			},
+			ExecutableName:        actionId,
+			StdoutOutputRetriever: nil,
+			StderrOutputRetriever: nil,
 		},
-		Error: outcome.Error,
+		Error: err,
 	}
 }
 
-func (h *eventHandler) sayThatExecutionSucceeded(actionId string, outcome *PipelineActionOutcome, testUnit *TestUnit, testCase *TestCase) {
+func (h *eventHandler) sayThatExecutionSucceeded(actionId string, testUnit *TestUnit, testCase *TestCase) {
 	h.eventChannel <- &Event{
 		Type:    ExecutableRunSuccess,
 		Context: EventContextFor(testUnit, testCase),
 		ExecuableInformation: &ExecutableEvent{
-			ExecutableName: actionId,
-			StdoutOutputRetriever: func() string {
-				return outcome.OutputBuffer.String()
-			},
-			StderrOutputRetriever: func() string {
-				return outcome.StderrBuffer.String()
-			},
+			ExecutableName:        actionId,
+			StdoutOutputRetriever: nil,
+			StderrOutputRetriever: nil,
 		},
 	}
 }
@@ -288,39 +280,39 @@ func (h *eventHandler) sayThatPipelineDefinitionIsInvalid(err error) {
 	}
 }
 
-func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *PipelineActionOutcome, testUnit *TestUnit, testCase *TestCase) {
-	switch action.Type {
-	case TemplatedResource:
-		templateOutputFunc := func() string {
-			if outcome.OutputBuffer != nil {
-				return outcome.OutputBuffer.String()
-			}
+// func (h *eventHandler) explainActionOutcome(action *PipelineAction, outcome *PipelineActionOutcome, testUnit *TestUnit, testCase *TestCase) {
+// 	switch action.Type {
+// 	case TemplatedResource:
+// 		templateOutputFunc := func() string {
+// 			if outcome.OutputBuffer != nil {
+// 				return outcome.OutputBuffer.String()
+// 			}
 
-			return ""
-		}
+// 			return ""
+// 		}
 
-		if outcome.Error == nil {
-			h.sayThatResourceCreationSucceeded(outcome.CreatedResource.Information(), templateOutputFunc, testUnit, testCase)
-		} else {
-			switch typedError := outcome.Error.(type) {
-			case *TemplateError:
-				h.sayThatResourceTemplateExpansionFailed(typedError.TemplateName, templateOutputFunc, typedError, testUnit, testCase)
-			case *ResourceCreationError:
-				h.sayThatResourceCreationFailed(typedError.ResourceInformation, templateOutputFunc, typedError, testUnit, testCase)
-			case *JobCompletionFailureError:
-				h.sayThatJobFailedToComplete(typedError.ResourceInformation, typedError, testUnit, testCase)
-			}
-		}
+// 		if outcome.Error == nil {
+// 			h.sayThatResourceCreationSucceeded(outcome.CreatedResource.Information(), templateOutputFunc, testUnit, testCase)
+// 		} else {
+// 			switch typedError := outcome.Error.(type) {
+// 			case *TemplateError:
+// 				h.sayThatResourceTemplateExpansionFailed(typedError.TemplateName, templateOutputFunc, typedError, testUnit, testCase)
+// 			case *ResourceCreationError:
+// 				h.sayThatResourceCreationFailed(typedError.ResourceInformation, templateOutputFunc, typedError, testUnit, testCase)
+// 			case *JobCompletionFailureError:
+// 				h.sayThatJobFailedToComplete(typedError.ResourceInformation, typedError, testUnit, testCase)
+// 			}
+// 		}
 
-	case ValuesTransform:
-	case Executable:
-		if outcome.Error != nil {
-			h.sayThatExecutionFailed(action.Descriptor, outcome, testUnit, testCase)
-		} else {
-			h.sayThatExecutionSucceeded(action.Descriptor, outcome, testUnit, testCase)
-		}
-	}
-}
+// 	case ValuesTransform:
+// 	case Executable:
+// 		if outcome.Error != nil {
+// 			h.sayThatExecutionFailed(action.Descriptor, outcome, testUnit, testCase)
+// 		} else {
+// 			h.sayThatExecutionSucceeded(action.Descriptor, outcome, testUnit, testCase)
+// 		}
+// 	}
+// }
 
 func (handler *eventHandler) sayThatAssetDirectoryCreationFailed(path string, err error, testUnit *TestUnit, testCase *TestCase) {
 	handler.eventChannel <- &Event{
@@ -333,13 +325,13 @@ func (handler *eventHandler) sayThatAssetDirectoryCreationFailed(path string, er
 	}
 }
 
-func (handler *eventHandler) sayThatJobFailedToComplete(resourceInformation *K8sResourceInformation, err error, testUnit *TestUnit, testCase *TestCase) {
-	handler.eventChannel <- &Event{
-		Type:    JobFailedToComplete,
-		Error:   err,
-		Context: EventContextFor(testUnit, testCase),
-	}
-}
+// func (handler *eventHandler) sayThatJobFailedToComplete(resourceInformation *K8sResourceInformation, err error, testUnit *TestUnit, testCase *TestCase) {
+// 	handler.eventChannel <- &Event{
+// 		Type:    JobFailedToComplete,
+// 		Error:   err,
+// 		Context: EventContextFor(testUnit, testCase),
+// 	}
+// }
 
 func (handler *eventHandler) sayThatAssetDirectoryCreationSucceeded(directoryPath string, testUnit *TestUnit, testCase *TestCase) {
 	handler.eventChannel <- &Event{
