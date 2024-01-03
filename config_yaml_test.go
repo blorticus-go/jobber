@@ -37,14 +37,22 @@ func (c *configTestCase) Run() error {
 
 var testCases = []*configTestCase{
 	{
-		caseName: "goodConfig01",
+		caseName: "base good config",
 		configAsString: `---
 Test:
-  Definition:
-    DefaultNamespace:
-        Basename: perftest
-    PipelineRootDirectory: /opt/pipeline/root
-    Pipeline:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
       - resources/nginx-producer.yaml
       - resources/telemetry.yaml
       - values-transforms/post-asm.sh
@@ -55,34 +63,45 @@ Test:
       - resources/retrieval-pod.yaml
       - executables/extract-data.sh
   Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
   Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
 `,
 		expectedStruct: &jobber.Configuration{
 			Test: &jobber.ConfigurationTest{
-				Definition: &jobber.ConfigurationDefinition{
-					DefaultNamespace: &jobber.ConfigurationNamespace{
-						Basename: "perftest",
+				AssetArchive: &jobber.ConfigurationAssetArchive{
+					FilePath: "/opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz",
+				},
+				DefaultNamespace: &jobber.ConfigurationDefaultNamespace{
+					Basename: "asm-perftest-",
+				},
+				GlobalValues: map[string]any{
+					"ImageVersions": map[string]any{
+						"nginx_producer": "0.8.0",
 					},
-					PipelineRootDirectory: "/opt/pipeline/root",
-					DefaultValues:         nil,
-					Pipeline: []string{
+					"TestCaseDurationInSeconds": 600,
+					"PipelinePvc": map[string]any{
+						"StorageRequest": "3Gi",
+					},
+				},
+				Pipeline: &jobber.ConfigurationPipeline{
+					ActionDefinitionsRootDirectory: "/home/vwells/pipeline",
+					ActionsInOrder: []string{
 						"resources/nginx-producer.yaml",
 						"resources/telemetry.yaml",
 						"values-transforms/post-asm.sh",
@@ -112,19 +131,341 @@ Test:
 					{
 						Name: "NoSidecar",
 						Values: map[string]any{
-							"TestDurationInSeconds": int(600),
-							"InjectASidecar":        "no",
+							"Sidecar": map[string]any{
+								"Inject": false,
+							},
 						},
 					},
 					{
 						Name: "mTLSOnly",
 						Values: map[string]any{
-							"TestDurationInSeconds": int(600),
-							"InjectASidecar":        "yes",
-							"UseMtls":               "yes",
-							"UseTelemetry":          "no",
-							"UsePcapper":            "no",
+							"Sidecar": map[string]any{
+								"Inject": true,
+								"Use": map[string]any{
+									"Telemetry": false,
+									"Pcapper":   false,
+								},
+							},
 						},
+					},
+				},
+			},
+		},
+		expectAnError: false,
+	},
+	{
+		caseName: "GlobalValues can be an empty map but will not be nil",
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
+      - resources/nginx-producer.yaml
+      - resources/telemetry.yaml
+      - values-transforms/post-asm.sh
+      - resources/shared-pvc.yaml
+      - resources/jmeter-job.yaml
+      - resources/jtl-processor-job.yaml
+      - resources/container-resources-job.yaml
+      - resources/retrieval-pod.yaml
+      - executables/extract-data.sh
+  Cases:
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+		expectedStruct: &jobber.Configuration{
+			Test: &jobber.ConfigurationTest{
+				AssetArchive: &jobber.ConfigurationAssetArchive{
+					FilePath: "/opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz",
+				},
+				DefaultNamespace: &jobber.ConfigurationDefaultNamespace{
+					Basename: "asm-perftest-",
+				},
+				GlobalValues: map[string]any{},
+				Pipeline: &jobber.ConfigurationPipeline{
+					ActionDefinitionsRootDirectory: "/home/vwells/pipeline",
+					ActionsInOrder: []string{
+						"resources/nginx-producer.yaml",
+						"resources/telemetry.yaml",
+						"values-transforms/post-asm.sh",
+						"resources/shared-pvc.yaml",
+						"resources/jmeter-job.yaml",
+						"resources/jtl-processor-job.yaml",
+						"resources/container-resources-job.yaml",
+						"resources/retrieval-pod.yaml",
+						"executables/extract-data.sh",
+					},
+				},
+				Cases: []*jobber.TestCase{
+					{
+						Name: "100TPS",
+						Values: map[string]any{
+							"TPS": int(100),
+						},
+					},
+					{
+						Name: "500TPS",
+						Values: map[string]any{
+							"TPS": int(500),
+						},
+					},
+				},
+				Units: []*jobber.TestUnit{
+					{
+						Name: "NoSidecar",
+						Values: map[string]any{
+							"Sidecar": map[string]any{
+								"Inject": false,
+							},
+						},
+					},
+					{
+						Name: "mTLSOnly",
+						Values: map[string]any{
+							"Sidecar": map[string]any{
+								"Inject": true,
+								"Use": map[string]any{
+									"Telemetry": false,
+									"Pcapper":   false,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		expectAnError: false,
+	},
+	{
+		caseName: "test cases can have empty Values but it will not be nil",
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
+      - resources/nginx-producer.yaml
+      - resources/telemetry.yaml
+      - values-transforms/post-asm.sh
+      - resources/shared-pvc.yaml
+      - resources/jmeter-job.yaml
+      - resources/jtl-processor-job.yaml
+      - resources/container-resources-job.yaml
+      - resources/retrieval-pod.yaml
+      - executables/extract-data.sh
+  Cases:
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+		expectedStruct: &jobber.Configuration{
+			Test: &jobber.ConfigurationTest{
+				AssetArchive: &jobber.ConfigurationAssetArchive{
+					FilePath: "/opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz",
+				},
+				DefaultNamespace: &jobber.ConfigurationDefaultNamespace{
+					Basename: "asm-perftest-",
+				},
+				GlobalValues: map[string]any{
+					"ImageVersions": map[string]any{
+						"nginx_producer": "0.8.0",
+					},
+					"TestCaseDurationInSeconds": 600,
+					"PipelinePvc": map[string]any{
+						"StorageRequest": "3Gi",
+					},
+				},
+				Pipeline: &jobber.ConfigurationPipeline{
+					ActionDefinitionsRootDirectory: "/home/vwells/pipeline",
+					ActionsInOrder: []string{
+						"resources/nginx-producer.yaml",
+						"resources/telemetry.yaml",
+						"values-transforms/post-asm.sh",
+						"resources/shared-pvc.yaml",
+						"resources/jmeter-job.yaml",
+						"resources/jtl-processor-job.yaml",
+						"resources/container-resources-job.yaml",
+						"resources/retrieval-pod.yaml",
+						"executables/extract-data.sh",
+					},
+				},
+				Cases: []*jobber.TestCase{
+					{
+						Name: "100TPS",
+						Values: map[string]any{
+							"TPS": int(100),
+						},
+					},
+					{
+						Name:   "500TPS",
+						Values: map[string]any{},
+					},
+				},
+				Units: []*jobber.TestUnit{
+					{
+						Name: "NoSidecar",
+						Values: map[string]any{
+							"Sidecar": map[string]any{
+								"Inject": false,
+							},
+						},
+					},
+					{
+						Name: "mTLSOnly",
+						Values: map[string]any{
+							"Sidecar": map[string]any{
+								"Inject": true,
+								"Use": map[string]any{
+									"Telemetry": false,
+									"Pcapper":   false,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		expectAnError: false,
+	},
+	{
+		caseName: "Unit Values can be empty but will not be nil",
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
+      - resources/nginx-producer.yaml
+      - resources/telemetry.yaml
+      - values-transforms/post-asm.sh
+      - resources/shared-pvc.yaml
+      - resources/jmeter-job.yaml
+      - resources/jtl-processor-job.yaml
+      - resources/container-resources-job.yaml
+      - resources/retrieval-pod.yaml
+      - executables/extract-data.sh
+  Cases:
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+`,
+		expectedStruct: &jobber.Configuration{
+			Test: &jobber.ConfigurationTest{
+				AssetArchive: &jobber.ConfigurationAssetArchive{
+					FilePath: "/opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz",
+				},
+				DefaultNamespace: &jobber.ConfigurationDefaultNamespace{
+					Basename: "asm-perftest-",
+				},
+				GlobalValues: map[string]any{
+					"ImageVersions": map[string]any{
+						"nginx_producer": "0.8.0",
+					},
+					"TestCaseDurationInSeconds": 600,
+					"PipelinePvc": map[string]any{
+						"StorageRequest": "3Gi",
+					},
+				},
+				Pipeline: &jobber.ConfigurationPipeline{
+					ActionDefinitionsRootDirectory: "/home/vwells/pipeline",
+					ActionsInOrder: []string{
+						"resources/nginx-producer.yaml",
+						"resources/telemetry.yaml",
+						"values-transforms/post-asm.sh",
+						"resources/shared-pvc.yaml",
+						"resources/jmeter-job.yaml",
+						"resources/jtl-processor-job.yaml",
+						"resources/container-resources-job.yaml",
+						"resources/retrieval-pod.yaml",
+						"executables/extract-data.sh",
+					},
+				},
+				Cases: []*jobber.TestCase{
+					{
+						Name: "100TPS",
+						Values: map[string]any{
+							"TPS": int(100),
+						},
+					},
+					{
+						Name: "500TPS",
+						Values: map[string]any{
+							"TPS": int(500),
+						},
+					},
+				},
+				Units: []*jobber.TestUnit{
+					{
+						Name: "NoSidecar",
+						Values: map[string]any{
+							"Sidecar": map[string]any{
+								"Inject": false,
+							},
+						},
+					},
+					{
+						Name:   "mTLSOnly",
+						Values: map[string]any{},
 					},
 				},
 			},
@@ -145,80 +486,21 @@ Test:
 `,
 	},
 	{
-		caseName:      ".Test must be defined",
-		expectAnError: true,
-		configAsString: `---
-Foo:
-    Definition:
-      Namespaces:
-        Default:
-          Basename: perftestg
-      PipelineRootDirectory: /opt/pipeline/root
-      Pipeline:
-        - resources/nginx-producer.yaml
-        - resources/telemetry.yaml
-        - values-transforms/post-asm.sh
-        - resources/shared-pvc.yaml
-        - resources/jmeter-job.yaml
-        - resources/jtl-processor-job.yaml
-        - resources/container-resources-job.yaml
-        - resources/retrieval-pod.yaml
-        - executables/extract-data.sh
-    Cases:
-      - Name: 100TPS
-        Values:
-          TPS: 100
-      - Name: 500TPS
-        Values:
-          TPS: 500
-    Units:
-      - Name: NoSidecar
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: no
-      - Name: mTLSOnly
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: yes
-          UseMtls: yes
-          UseTelemetry: no
-          UsePcapper: no
-  `,
-	},
-	{
-		caseName:      ".Test.Definition must exist",
+		caseName:      "AssetArchive must be present",
 		expectAnError: true,
 		configAsString: `---
 Test:
-  Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
-  Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
-`,
-	},
-	{
-		caseName:      ".Test.Definition.Namespaces must exist",
-		expectAnError: true,
-		configAsString: `---
-Test:
-  Definition:
-    PipelineRootDirectory: /opt/pipeline/root
-    Pipeline:
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
       - resources/nginx-producer.yaml
       - resources/telemetry.yaml
       - values-transforms/post-asm.sh
@@ -229,35 +511,44 @@ Test:
       - resources/retrieval-pod.yaml
       - executables/extract-data.sh
   Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
   Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
 `,
 	},
 	{
-		caseName:      ".Test.Definition.Namespaces cannot be empty",
+		caseName:      "AssetArchive.FilePath cannot be the empty string",
 		expectAnError: true,
 		configAsString: `---
 Test:
-  Definition:
-    Namespaces:
-    PipelineRootDirectory: /opt/pipeline/root
-    Pipeline:
+  AssetArchive:
+    FilePath: ""
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
       - resources/nginx-producer.yaml
       - resources/telemetry.yaml
       - values-transforms/post-asm.sh
@@ -268,37 +559,42 @@ Test:
       - resources/retrieval-pod.yaml
       - executables/extract-data.sh
   Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
   Units:
-    - Name: NoSidcar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
 `,
 	},
 	{
-		caseName:      ".Test.Definition.Namespaces.Default must exist",
+		caseName:      "DefaultNamespace must exist",
 		expectAnError: true,
 		configAsString: `---
 Test:
-  Definition:
-    Namespaces:
-      Florp:
-        Basename: florp
-    PipelineRootDirectory: /opt/pipeline/root
-    Pipeline:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
       - resources/nginx-producer.yaml
       - resources/telemetry.yaml
       - values-transforms/post-asm.sh
@@ -309,350 +605,44 @@ Test:
       - resources/retrieval-pod.yaml
       - executables/extract-data.sh
   Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
   Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
 `,
 	},
 	{
-		caseName:      ".Test.Definition.Pipeline must exist",
+		caseName:      "DefaultNamespace.Basename cannot be the empty string",
 		expectAnError: true,
 		configAsString: `---
 Test:
-    Definition:
-      PipelineRootDirectory: /opt/pipeline/root
-      Namespaces:
-        Default:
-          Basename: perftest
-    Cases:
-      - Name: 100TPS
-        Values:
-          TPS: 100
-      - Name: 500TPS
-        Values:
-          TPS: 500
-    Units:
-      - Name: NoSidecar
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: no
-      - Name: mTLSOnly
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: yes
-          UseMtls: yes
-          UseTelemetry: no
-          UsePcapper: no
-  `,
-	},
-	{
-		caseName:      ".Test.Definition.Pipeline cannot be an empty list",
-		expectAnError: true,
-		configAsString: `---
-Test:
-    Definition:
-      Namespaces:
-        Default:
-          Basename: perftest
-      PipelineRootDirectory: /opt/pipeline/root
-      Pipeline: []
-    Cases:
-      - Name: 100TPS
-        Values:
-          TPS: 100
-      - Name: 500TPS
-        Values:
-          TPS: 500
-    Units:
-      - Name: NoSidecar
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: no
-      - Name: mTLSOnly
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: yes
-          UseMtls: yes
-          UseTelemetry: no
-          UsePcapper: no
-  `,
-	},
-	{
-		caseName:      ".Test.Cases must exist",
-		expectAnError: true,
-		configAsString: `---
-Test:
-    Definition:
-      Namespaces:
-        Default:
-          Basename: perftest
-      PipelineRootDirectory: /opt/pipeline/root
-      Pipeline:
-        - resources/nginx-producer.yaml
-        - resources/telemetry.yaml
-        - values-transforms/post-asm.sh
-        - resources/shared-pvc.yaml
-        - resources/jmeter-job.yaml
-        - resources/jtl-processor-job.yaml
-        - resources/container-resources-job.yaml
-        - resources/retrieval-pod.yaml
-        - executables/extract-data.sh
-    Units:
-      - Name: NoSidecar
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: no
-      - Name: mTLSOnly
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: yes
-          UseMtls: yes
-          UseTelemetry: no
-          UsePcapper: no
-  `,
-	},
-	{
-		caseName:      ".Test.Cases cannot be an empty list",
-		expectAnError: true,
-		configAsString: `---
-Test:
-    Definition:
-      Namespaces:
-        Default:
-          Basename: perftest
-      PipelineRootDirectory: /opt/pipeline/root
-      Pipeline:
-        - resources/nginx-producer.yaml
-        - resources/telemetry.yaml
-        - values-transforms/post-asm.sh
-        - resources/shared-pvc.yaml
-        - resources/jmeter-job.yaml
-        - resources/jtl-processor-job.yaml
-        - resources/container-resources-job.yaml
-        - resources/retrieval-pod.yaml
-        - executables/extract-data.sh
-    Cases: []
-    Units:
-      - Name: NoSidecar
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: no
-      - Name: mTLSOnly
-        Values:
-          TestDurationInSeconds: 600
-          InjectASidecar: yes
-          UseMtls: yes
-          UseTelemetry: no
-          UsePcapper: no
-  `,
-	},
-	{
-		caseName:      ".Test.Units must be defined",
-		expectAnError: true,
-		configAsString: `---
-Test:
-    Definition:
-      Namespaces:
-        Default:
-          Basename: perftest
-      PipelineRootDirectory: /opt/pipeline/root
-      Pipeline:
-        - resources/nginx-producer.yaml
-        - resources/telemetry.yaml
-        - values-transforms/post-asm.sh
-        - resources/shared-pvc.yaml
-        - resources/jmeter-job.yaml
-        - resources/jtl-processor-job.yaml
-        - resources/container-resources-job.yaml
-        - resources/retrieval-pod.yaml
-        - executables/extract-data.sh
-    Cases:
-      - Name: 100TPS
-        Values:
-          TPS: 100
-      - Name: 500TPS
-        Values:
-          TPS: 500
-  `,
-	},
-	{
-		caseName:      ".Test.Units cannot be empty",
-		expectAnError: true,
-		configAsString: `---
-Test:
-    Definition:
-      Namespaces:
-        Default:
-          Basename: perftest
-      PipelineRootDirectory: /opt/pipeline/root
-      Pipeline:
-        - resources/nginx-producer.yaml
-        - resources/telemetry.yaml
-        - values-transforms/post-asm.sh
-        - resources/shared-pvc.yaml
-        - resources/jmeter-job.yaml
-        - resources/jtl-processor-job.yaml
-        - resources/container-resources-job.yaml
-        - resources/retrieval-pod.yaml
-        - executables/extract-data.sh
-    Cases:
-      - Name: 100TPS
-        Values:
-          TPS: 100
-      - Name: 500TPS
-        Values:
-          TPS: 500
-    Units: []
-  `,
-	},
-	{
-		caseName:      ".Test.Definition.Pipeline action type (florp) is not valid",
-		expectAnError: true,
-		configAsString: `---
-Test:
-  Definition:
-    Namespaces:
-      Default:
-        Basename: perftest
-    PipelineRootDirectory: /opt/pipeline/root
-    Pipeline:
-      - resources/nginx-producer.yaml
-      - resources/telemetry.yaml
-      - values-transforms/post-asm.sh
-      - florp/shared-pvc.yaml
-      - resources/jmeter-job.yaml
-      - resources/jtl-processor-job.yaml
-      - resources/container-resources-job.yaml
-      - resources/retrieval-pod.yaml
-      - executables/extract-data.sh
-  Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
-  Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
-`,
-	},
-	{
-		caseName:      ".Test.Definition.Pipeline entries must be <type>/<target>",
-		expectAnError: true,
-		configAsString: `---
-Test:
-  Definition:
-    Namespaces:
-      Default:
-        Basename: perftest
-    PipelineRootDirectory: /opt/pipeline/root
-    Pipeline:
-      - resources/nginx-producer.yaml
-      - resources/telemetry.yaml
-      - post-asm.sh
-      - resources/shared-pvc.yaml
-      - resources/jmeter-job.yaml
-      - resources/jtl-processor-job.yaml
-      - resources/container-resources-job.yaml
-      - resources/retrieval-pod.yaml
-      - executables/extract-data.sh
-  Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
-  Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
-`,
-	},
-	{
-		caseName:      ".Test.Definition.Pipeline entries must be <type>/<target> without additional slashes",
-		expectAnError: true,
-		configAsString: `---
-Test:
-  Definition:
-    Namespaces:
-      Default:
-        Basename: perftest
-    PipelineRootDirectory: /opt/pipeline/root
-    Pipeline:
-      - resources/nginx-producer.yaml
-      - resources/telemetry.yaml
-      - values-transforms/post-asm.sh
-      - resources/shared-pvc.yaml/baz
-      - resources/jmeter-job.yaml
-      - resources/jtl-processor-job.yaml
-      - resources/container-resources-job.yaml
-      - resources/retrieval-pod.yaml
-      - executables/extract-data.sh
-  Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
-  Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
-`,
-	},
-	{
-		caseName:      ".Test.Definition.PipelineDirectoryRoot must be defined",
-		expectAnError: true,
-		configAsString: `---
-Test:
-  Definition:
-    Namespaces:
-      Default:
-        Basename: perftest
-    Pipeline:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: ""
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
       - resources/nginx-producer.yaml
       - resources/telemetry.yaml
       - values-transforms/post-asm.sh
@@ -663,24 +653,267 @@ Test:
       - resources/retrieval-pod.yaml
       - executables/extract-data.sh
   Cases:
-    - Name: 100TPS
-      Values:
-        TPS: 100
-    - Name: 500TPS
-      Values:
-        TPS: 500
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
   Units:
-    - Name: NoSidecar
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: no
-    - Name: mTLSOnly
-      Values:
-        TestDurationInSeconds: 600
-        InjectASidecar: yes
-        UseMtls: yes
-        UseTelemetry: no
-        UsePcapper: no
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+	},
+	{
+		caseName:      "Pipeline must be defined",
+		expectAnError: true,
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Cases:
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+	},
+	{
+		caseName:      "Pipeline.ActionDefinitionsRootDirectory cannot be the empty string",
+		expectAnError: true,
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: ""
+    ActionsInOrder:
+      - resources/nginx-producer.yaml
+      - resources/telemetry.yaml
+      - values-transforms/post-asm.sh
+      - resources/shared-pvc.yaml
+      - resources/jmeter-job.yaml
+      - resources/jtl-processor-job.yaml
+      - resources/container-resources-job.yaml
+      - resources/retrieval-pod.yaml
+      - executables/extract-data.sh
+  Cases:
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+	},
+	{
+		caseName:      "Pipeline.ActionsInOrder cannot be empty",
+		expectAnError: true,
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder: []
+  Cases:
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+	},
+	{
+		caseName:      "Cases must be defined",
+		expectAnError: true,
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
+      - resources/nginx-producer.yaml
+      - resources/telemetry.yaml
+      - values-transforms/post-asm.sh
+      - resources/shared-pvc.yaml
+      - resources/jmeter-job.yaml
+      - resources/jtl-processor-job.yaml
+      - resources/container-resources-job.yaml
+      - resources/retrieval-pod.yaml
+      - executables/extract-data.sh
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+	},
+	{
+		caseName:      "Cases cannot be an empty list",
+		expectAnError: true,
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
+      - resources/nginx-producer.yaml
+      - resources/telemetry.yaml
+      - values-transforms/post-asm.sh
+      - resources/shared-pvc.yaml
+      - resources/jmeter-job.yaml
+      - resources/jtl-processor-job.yaml
+      - resources/container-resources-job.yaml
+      - resources/retrieval-pod.yaml
+      - executables/extract-data.sh
+  Cases: []
+  Units:
+  - Name: NoSidecar
+    Values:
+      Sidecar:
+        Inject: false
+  - Name: mTLSOnly
+    Values:
+      Sidecar:
+        Inject: true
+        Use:
+          Telemetry: false
+          Pcapper: false
+`,
+	},
+	{
+		caseName:      "Units cannot be the empty list",
+		expectAnError: true,
+		configAsString: `---
+Test:
+  AssetArchive:
+    FilePath: /opt/performance-test/asm/$(target-version)/$(date)/test-result.tar.gz
+  DefaultNamespace:
+    Basename: asm-perftest-
+  GlobalValues:
+    ImageVersions:
+      nginx_producer: 0.8.0
+    TestCaseDurationInSeconds: 600
+    PipelinePvc:
+      StorageRequest: 3Gi
+  Pipeline:
+    ActionDefinitionsRootDirectory: /home/vwells/pipeline
+    ActionsInOrder:
+      - resources/nginx-producer.yaml
+      - resources/telemetry.yaml
+      - values-transforms/post-asm.sh
+      - resources/shared-pvc.yaml
+      - resources/jmeter-job.yaml
+      - resources/jtl-processor-job.yaml
+      - resources/container-resources-job.yaml
+      - resources/retrieval-pod.yaml
+      - executables/extract-data.sh
+  Cases:
+  - Name: 100TPS
+    Values:
+      TPS: 100
+  - Name: 500TPS
+    Values:
+      TPS: 500
+  Units: []
 `,
 	},
 }

@@ -15,7 +15,7 @@ func main() {
 	client, err := jobber.NewClientUsingKubeconfigFile(kubeconfigFilePath)
 	logger.DieIfError(err, "failed to process kubeconfig")
 
-	config, err := jobber.ReadConfigurationYamlFromFile(clargs.ConfigurationFilePath)
+	config, err := jobber.ReadConfigurationYamlFromFile(clargs.ConfigurationFilePath, clargs.ConfigExpansionVars)
 	logger.DieIfError(err)
 
 	logger.SetContextFieldWidth(config.CharactersInLongestUnitName(), config.CharactersInLongestCaseName())

@@ -1,160 +1,150 @@
 package jobber_test
 
 import (
-	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/blorticus-go/jobber"
 	"github.com/go-test/deep"
 )
 
-func TestVariablesBase(t *testing.T) {
-	v := jobber.NewEmptyPipelineVariables(nil)
+func TestVariables(t *testing.T) {
+	variables := jobber.NewEmptyPipelineVariables(nil)
 
-	expectedStructureWhenEmpty := &jobber.PipelineVariables{
-		Values: map[string]any{},
-		Config: &jobber.TemplateExpansionConfigVariables{
-			DefaultNamespace: &jobber.TemplateExpansionNamespace{},
+	if diff := deep.Equal(variables, &jobber.PipelineVariables{
+		Values: &jobber.PipelineVariablesValues{
+			Global: map[string]any{},
+			Unit:   map[string]any{},
+			Case:   map[string]any{},
 		},
-		Runtime: &jobber.PipelineRuntimeValues{},
-	}
-
-	if diff := deep.Equal(v, expectedStructureWhenEmpty); diff != nil {
-		t.Errorf("on NewEmptyPipelineVariables, expect empty variables, got diff = %s", diff)
-	}
-
-	c := v.DeepCopy()
-
-	if v == c {
-		t.Errorf("on DeepCopy() base pointers should not be equal, but they are")
-	}
-	if v.Config == c.Config {
-		t.Errorf("on DeepCopy() .Config pointers should not be equal, but they are")
-	}
-	if reflect.ValueOf(v.Values).Pointer() == reflect.ValueOf(c.Values).Pointer() {
-		t.Errorf("on DeepCopy() .Values pointers should not be equal, but they are")
-	}
-	if reflect.ValueOf(v.Config.DefaultNamespace).Pointer() == reflect.ValueOf(c.Config.DefaultNamespace).Pointer() {
-		t.Errorf("on DeepCopy() .Values.DefaultNamespace pointers should not be equal, but they are")
-	}
-	if diff := deep.Equal(c, expectedStructureWhenEmpty); diff != nil {
-		t.Errorf("on NewEmptyPipelineVariables, expect empty variables, got diff = %s", diff)
-	}
-
-	c.AddDefaultNamespaceToConfig("some-default")
-
-	if diff := deep.Equal(c, &jobber.PipelineVariables{
-		Values: map[string]any{},
-		Config: &jobber.TemplateExpansionConfigVariables{
-			DefaultNamespace: &jobber.TemplateExpansionNamespace{
-				GeneratedName: "some-default",
+		Context: &jobber.PipelineVariablesContext{
+			TestUnitName:                         "",
+			TestCaseName:                         "",
+			TestCaseRetrievedAssetsDirectoryPath: "",
+		},
+		Runtime: &jobber.PipelineRuntimeValues{
+			DefaultNamespace: &jobber.PipelineRuntimeNamespace{
+				Name: "",
 			},
 		},
-		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
-		t.Errorf("on AddNamespaceToConfig for copy, expected does not match received, diff = %s", diff)
+		t.Errorf(strings.Join(diff, "\t"))
 	}
 
-	if diff := deep.Equal(v, expectedStructureWhenEmpty); diff != nil {
-		t.Errorf("on change to copy, expect empty base variables, got diff = %s", diff)
-	}
-
-	p := jobber.NewPipelineVariablesWithSeedValues(map[string]any{
-		"foo": 10,
-		"bar": true,
-		"baz": "blah",
-	}, nil)
-
-	if diff := deep.Equal(p, &jobber.PipelineVariables{
-		Values: map[string]any{
-			"foo": 10,
-			"bar": true,
-			"baz": "blah",
+	variables.WithGlobalValues(map[string]any{
+		"ImageVersions": map[string]any{
+			"cgam_perf_test_nginx": "0.9.0",
 		},
-		Config:  &jobber.TemplateExpansionConfigVariables{DefaultNamespace: &jobber.TemplateExpansionNamespace{}},
-		Runtime: &jobber.PipelineRuntimeValues{},
-	}); diff != nil {
-		t.Errorf("on creation with seed values: %s", diff)
-	}
+		"TestCaseDurationInSeconds": 600,
+	})
 
-	q := jobber.NewPipelineVariablesWithSeedValues(nil, nil)
-
-	if diff := deep.Equal(q, expectedStructureWhenEmpty); diff != nil {
-		t.Errorf("on NewPipelineVariablesWithSeedValues(nil), expect empty variables, got diff = %s", diff)
-	}
-
-}
-
-func TestVariablesMerge(t *testing.T) {
-	firstMergeInVars := map[string]any{
-		"TestDurationInSeconds": 600,
-		"Name":                  "test",
-		"Empty":                 "",
-		"InjectASidecar":        true,
-		"UseMtls":               true,
-		"UseTelemetry":          false,
-		"UsePcapper":            false,
-		"Submap": map[string]string{
-			"a":    "b",
-			"here": "there",
+	if diff := deep.Equal(variables, &jobber.PipelineVariables{
+		Values: &jobber.PipelineVariablesValues{
+			Global: map[string]any{
+				"ImageVersions": map[string]any{
+					"cgam_perf_test_nginx": "0.9.0",
+				},
+				"TestCaseDurationInSeconds": 600,
+			},
+			Unit: map[string]any{},
+			Case: map[string]any{},
 		},
-	}
-
-	v := jobber.NewEmptyPipelineVariables(nil)
-	v1 := v.MergeValuesToCopy(firstMergeInVars)
-
-	if diff := deep.Equal(v1, &jobber.PipelineVariables{
-		Values: map[string]any{
-			"TestDurationInSeconds": 600,
-			"Name":                  "test",
-			"Empty":                 "",
-			"InjectASidecar":        true,
-			"UseMtls":               true,
-			"UseTelemetry":          false,
-			"UsePcapper":            false,
-			"Submap": map[string]string{
-				"a":    "b",
-				"here": "there",
+		Context: &jobber.PipelineVariablesContext{
+			TestUnitName:                         "",
+			TestCaseName:                         "",
+			TestCaseRetrievedAssetsDirectoryPath: "",
+		},
+		Runtime: &jobber.PipelineRuntimeValues{
+			DefaultNamespace: &jobber.PipelineRuntimeNamespace{
+				Name: "",
 			},
 		},
-		Config:  &jobber.TemplateExpansionConfigVariables{DefaultNamespace: &jobber.TemplateExpansionNamespace{}},
-		Runtime: &jobber.PipelineRuntimeValues{},
 	}); diff != nil {
-		t.Errorf("on first merge of variables: %s", diff)
+		t.Errorf(strings.Join(diff, "\t"))
 	}
 
-	secondMergeVars := map[string]any{
-		"TestDurationInSeconds": 400,
-		"Name":                  "newname",
-		"TPS":                   800,
-		"Verbosity":             "Maximum",
-		"Submap": map[string]string{
-			"a":  "baz",
-			"no": "where",
-		},
-	}
-
-	v2 := v1.MergeValuesToCopy(secondMergeVars)
-
-	if diff := deep.Equal(v2, &jobber.PipelineVariables{
-		Values: map[string]any{
-			"TestDurationInSeconds": 400,
-			"Name":                  "newname",
-			"Empty":                 "",
-			"InjectASidecar":        true,
-			"UseMtls":               true,
-			"UseTelemetry":          false,
-			"UsePcapper":            false,
-			"TPS":                   800,
-			"Verbosity":             "Maximum",
-			"Submap": map[string]string{
-				"a":  "baz",
-				"no": "where",
+	variables = variables.RescopedToUnitNamed("unit01").WithUnitValues(map[string]any{
+		"Sidecar": map[string]any{
+			"Inject": true,
+			"Use": map[string]any{
+				"Telemetry": false,
+				"Pcapper":   false,
 			},
 		},
-		Config:  &jobber.TemplateExpansionConfigVariables{DefaultNamespace: &jobber.TemplateExpansionNamespace{}},
-		Runtime: &jobber.PipelineRuntimeValues{},
+	})
+
+	if diff := deep.Equal(variables, &jobber.PipelineVariables{
+		Values: &jobber.PipelineVariablesValues{
+			Global: map[string]any{
+				"ImageVersions": map[string]any{
+					"cgam_perf_test_nginx": "0.9.0",
+				},
+				"TestCaseDurationInSeconds": 600,
+			},
+			Unit: map[string]any{
+				"Sidecar": map[string]any{
+					"Inject": true,
+					"Use": map[string]any{
+						"Telemetry": false,
+						"Pcapper":   false,
+					},
+				},
+			},
+			Case: map[string]any{},
+		},
+		Context: &jobber.PipelineVariablesContext{
+			TestUnitName:                         "unit01",
+			TestCaseName:                         "",
+			TestCaseRetrievedAssetsDirectoryPath: "",
+		},
+		Runtime: &jobber.PipelineRuntimeValues{
+			DefaultNamespace: &jobber.PipelineRuntimeNamespace{
+				Name: "",
+			},
+		},
 	}); diff != nil {
-		t.Errorf("on second merge of variables: %s", diff)
+		t.Errorf(strings.Join(diff, "\t"))
 	}
+
+	variables = variables.RescopedToCaseNamed("case01").WithCaseValues(map[string]any{
+		"TPS":                   100,
+		"ConcurrentConnections": 1,
+	}).AndUsingDefaultNamespaceNamed("default-namespace").AndTestCaseRetrievedAssetsDirectoryAt("/tmp/case")
+
+	if diff := deep.Equal(variables, &jobber.PipelineVariables{
+		Values: &jobber.PipelineVariablesValues{
+			Global: map[string]any{
+				"ImageVersions": map[string]any{
+					"cgam_perf_test_nginx": "0.9.0",
+				},
+				"TestCaseDurationInSeconds": 600,
+			},
+			Unit: map[string]any{
+				"Sidecar": map[string]any{
+					"Inject": true,
+					"Use": map[string]any{
+						"Telemetry": false,
+						"Pcapper":   false,
+					},
+				},
+			},
+			Case: map[string]any{
+				"TPS":                   100,
+				"ConcurrentConnections": 1,
+			},
+		},
+		Context: &jobber.PipelineVariablesContext{
+			TestUnitName:                         "unit01",
+			TestCaseName:                         "case01",
+			TestCaseRetrievedAssetsDirectoryPath: "/tmp/case",
+		},
+		Runtime: &jobber.PipelineRuntimeValues{
+			DefaultNamespace: &jobber.PipelineRuntimeNamespace{
+				Name: "default-namespace",
+			},
+		},
+	}); diff != nil {
+		t.Errorf(strings.Join(diff, "\t"))
+	}
+
 }

@@ -10,21 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-type TemplateExpansionNamespace struct {
-	GeneratedName string
-}
-
-type VariablesConfigContext struct {
-	TestUnitName                         string
-	TestCaseName                         string
-	TestCaseRetrievedAssetsDirectoryPath string
-}
-
-type TemplateExpansionConfigVariables struct {
-	DefaultNamespace *TemplateExpansionNamespace
-	Context          *VariablesConfigContext
-}
-
 type Runner struct {
 	client          *Client
 	config          *Configuration
@@ -40,7 +25,7 @@ func NewRunner(config *Configuration, client *Client) *Runner {
 }
 
 func (runner *Runner) createDefaultNamespace(pipelineVariables *PipelineVariables) (*corev1.Namespace, error) {
-	action, err := PipelineActionFromStringDescriptor("resources/default-namespace.yaml", runner.config.Test.Definition.PipelineRootDirectory)
+	action, err := PipelineActionFromStringDescriptor("resources/default-namespace.yaml", runner.config.Test.Pipeline.ActionDefinitionsRootDirectory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create action for resources/default-namespace.yaml: %s", err)
 	}
@@ -81,9 +66,9 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 		return
 	}
 
-	templateExpansionVariables := NewPipelineVariablesWithSeedValues(runner.config.Test.Definition.DefaultValues, runner.client)
+	templateExpansionVariables := NewEmptyPipelineVariables(runner.client).WithGlobalValues(runner.config.Test.GlobalValues)
 
-	testCasePipeline, err := NewPipelineFromStringDescriptors(runner.config.Test.Definition.Pipeline, runner.config.Test.Definition.PipelineRootDirectory)
+	testCasePipeline, err := NewPipelineFromStringDescriptors(runner.config.Test.Pipeline.ActionsInOrder, runner.config.Test.Pipeline.ActionDefinitionsRootDirectory)
 	if err != nil {
 		eventHandler.sayThatPipelineDefinitionIsInvalid(err)
 		return
@@ -97,7 +82,7 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 			return
 		}
 
-		templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testUnit.Values)
+		templateExpansionVariables := templateExpansionVariables.RescopedToUnitNamed(testUnit.Name).WithUnitValues(testUnit.Values)
 
 		for _, testCase := range runner.config.Test.Cases {
 			eventHandler.sayThatCaseStarted(testUnit, testCase)
@@ -107,20 +92,16 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 				return
 			}
 
-			templateExpansionVariables.Config.Context = &VariablesConfigContext{
-				TestUnitName:                         testUnit.Name,
-				TestCaseName:                         testCase.Name,
-				TestCaseRetrievedAssetsDirectoryPath: assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase).RetrievedAssets,
-			}
-
-			templateExpansionVariables := templateExpansionVariables.MergeValuesToCopy(testCase.Values)
-
 			nsObject, err := runner.createDefaultNamespace(templateExpansionVariables)
 			if eventHandler.explainAttemptToCreateDefaultNamespace(nsObject, EventContextFor(testUnit, testCase), err); err != nil {
 				return
 			}
 
-			templateExpansionVariables.AddDefaultNamespaceToConfig(nsObject.Name)
+			templateExpansionVariables := templateExpansionVariables.
+				RescopedToCaseNamed(testCase.Name).
+				WithCaseValues(testCase.Values).
+				AndTestCaseRetrievedAssetsDirectoryAt(assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase).RetrievedAssets).
+				AndUsingDefaultNamespaceNamed(nsObject.Name)
 
 			for action := testCasePipeline.Restart(); action != nil; action = testCasePipeline.NextAction() {
 				for _, outcome := range action.Run(templateExpansionVariables, runner.client) {
@@ -155,12 +136,12 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 		eventHandler.sayThatUnitCompletedSuccessfully(testUnit)
 	}
 
-	if err := assetsDirectoryManager.GenerateArchiveFileAt(runner.config.Test.Definition.ArchiveFilePath); err != nil {
-		eventHandler.sayThatArchiveCreationFailed(runner.config.Test.Definition.ArchiveFilePath, assetsDirectoryManager.TestRootAssetDirectoryPath(), err)
+	if err := assetsDirectoryManager.GenerateArchiveFileAt(runner.config.Test.AssetArchive.FilePath); err != nil {
+		eventHandler.sayThatArchiveCreationFailed(runner.config.Test.AssetArchive.FilePath, assetsDirectoryManager.TestRootAssetDirectoryPath(), err)
 		return
 	}
 
-	eventHandler.sayThatArchiveCreationSucceeded(assetsDirectoryManager.TestRootAssetDirectoryPath())
+	eventHandler.sayThatArchiveCreationSucceeded(runner.config.Test.AssetArchive.FilePath)
 
 	if err := assetsDirectoryManager.RemoveAssetsDirectory(); err != nil {
 		eventHandler.sayThatAssetDirectoryDeletionFailed(assetsDirectoryManager.TestRootAssetDirectoryPath(), err)
