@@ -1,6 +1,7 @@
 package jobber
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -30,14 +31,26 @@ func (runner *Runner) createDefaultNamespace(pipelineVariables *PipelineVariable
 		return nil, fmt.Errorf("failed to create action for resources/default-namespace.yaml: %s", err)
 	}
 
-	outcome := (action.Run(pipelineVariables, runner.client))[0]
+	actionEventChannel := make(chan *ActionEvent)
+	go action.Run(pipelineVariables, runner.client, actionEventChannel)
 
-	if outcome.Error != nil {
-		return nil, fmt.Errorf("error on attempt to create default namespace from resources/default-namespace.yaml: %s", err)
+	var createdResource *GenericK8sResource
+
+EventLoop:
+	for {
+		event := <-actionEventChannel
+		switch event.Type {
+		case AnErrorOccurred:
+			return nil, fmt.Errorf("error on attempt to create default namespace from resources/default-namespace.yaml: %s", err)
+		case ResourceCreated:
+			createdResource = event.AffectedResource
+		case ActionCompletedSuccessfully:
+			break EventLoop
+		}
 	}
 
 	nsObject := new(corev1.Namespace)
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(outcome.CreatedResource.ApiObject().Object, nsObject); err != nil {
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(createdResource.ApiObject().Object, nsObject); err != nil {
 		return nil, fmt.Errorf("failed to convert unstructured namespace object to typed: %s", err)
 	}
 
@@ -104,20 +117,12 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 				AndUsingDefaultNamespaceNamed(nsObject.Name)
 
 			for action := testCasePipeline.Restart(); action != nil; action = testCasePipeline.NextAction() {
-				for _, outcome := range action.Run(templateExpansionVariables, runner.client) {
-					writeActionOutcomeInformationToAssetsDirectory(action, outcome, assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase))
+				actionEventChannel := make(chan *ActionEvent)
 
-					if eventHandler.explainActionOutcome(action, outcome, testUnit, testCase); outcome.Error != nil {
-						return
-					}
-					if outcome.CreatedResource != nil {
-						runner.resourceTracker.AddCreatedResource(&DeletableK8sResource{
-							information: (outcome.CreatedResource.Information()),
-							deletionMethod: func(object any) error {
-								return outcome.CreatedResource.Delete()
-							},
-						})
-					}
+				go action.Run(templateExpansionVariables, runner.client, actionEventChannel)
+
+				if err := runner.handleActionEvents(action, actionEventChannel, eventHandler, assetsDirectoryManager, testUnit, testCase); err != nil {
+					return
 				}
 			}
 
@@ -151,6 +156,54 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 	eventHandler.sayThatAssetDirectoryDeletionWasSuccessful(assetsDirectoryManager.TestRootAssetDirectoryPath())
 
 	eventHandler.sayThatTestingCompletedSuccessfully()
+}
+
+func (runner *Runner) handleActionEvents(action *PipelineAction, actionEventChannel <-chan *ActionEvent, eventHandler *eventHandler, assetsDirectoryManager *ContextualAssetsDirectoryManager, testUnit *TestUnit, testCase *TestCase) error {
+	for {
+		event := <-actionEventChannel
+		switch event.Type {
+		case TemplateExpanded:
+			writeExpandedTemplateForAction(action, event.ExpandedTemplateBuffer, assetsDirectoryManager.TestCaseAssetsDirectoryPathsFor(testUnit, testCase).ExpandedTemplates)
+		case ResourceCreated:
+			eventHandler.sayThatResourceCreationSucceeded(event.AffectedResource.Information(), func() string { return "" }, testUnit, testCase)
+			runner.resourceTracker.AddCreatedResource(&DeletableK8sResource{
+				information: event.AffectedResource.Information(),
+				deletionMethod: func(object any) error {
+					return event.AffectedResource.Delete()
+				},
+			})
+			switch event.AffectedResource.GvkString() {
+			case "v1/Pod":
+			case "batch/v1/Job":
+			}
+		case JobCompleted:
+		case PodMovedToRunningState:
+		case ExecutionSuccessful:
+			eventHandler.sayThatExecutionSucceeded(action.Descriptor, nil, testUnit, testCase)
+		case ValuesTransformCompleted:
+		case AnErrorOccurred:
+			switch action.Type {
+			case TemplatedResource:
+				if event.AffectedResource != nil {
+					eventHandler.sayThatResourceCreationFailed(event.AffectedResource.Information(), func() string { return "" }, event.Error, testUnit, testCase)
+				} else {
+					eventHandler.sayThatResourceTemplateExpansionFailed(action.ActionFullyQualifiedPath, func() string { return "" }, event.Error, testUnit, testCase)
+				}
+			case Executable:
+				eventHandler.sayThatExecutionFailed(action.Descriptor, nil, testUnit, testCase)
+			}
+			return event.Error
+		case ActionCompletedSuccessfully:
+			return nil
+		}
+	}
+}
+
+func writeExpandedTemplateForAction(action *PipelineAction, expandedTemplateBuffer *bytes.Buffer, assetsDirectoryPath string) {
+	outputFilesBasePath := deriveActionOutputFilesBasePath(assetsDirectoryPath, action.ActionFullyQualifiedPath)
+	if expandedTemplateBuffer != nil {
+		writeReaderToFile(outputFilesBasePath, 0640, expandedTemplateBuffer)
+	}
 }
 
 func writeActionOutcomeInformationToAssetsDirectory(action *PipelineAction, outcome *PipelineActionOutcome, testCaseAssetsDirectories *TestCaseDirectoryPaths) {

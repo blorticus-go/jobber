@@ -83,43 +83,65 @@ func PipelineActionFromStringDescriptor(descriptor string, pipelineActionBasePat
 	}
 }
 
-func (action *PipelineAction) Run(pipelineVariables *PipelineVariables, client *Client) []*PipelineActionOutcome {
+type ActionEventType int
+
+const (
+	TemplateExpanded ActionEventType = iota
+	ResourceCreated
+	JobCompleted
+	PodMovedToRunningState
+	ExecutionSuccessful
+	ValuesTransformCompleted
+	ActionCompletedSuccessfully
+	AnErrorOccurred
+)
+
+type ActionEvent struct {
+	Type                   ActionEventType
+	Error                  error
+	ExpandedTemplateBuffer *bytes.Buffer
+	StdoutBuffer           *bytes.Buffer
+	StderrBuffer           *bytes.Buffer
+	AffectedResource       *GenericK8sResource
+}
+
+func (action *PipelineAction) Run(pipelineVariables *PipelineVariables, client *Client, eventChannel chan<- *ActionEvent) {
 	switch action.Type {
 	case TemplatedResource:
-		return action.runTemplatedResource(pipelineVariables, client)
+		action.runTemplatedResource(pipelineVariables, client, eventChannel)
 	case Executable:
-		return action.runExecutable(pipelineVariables)
+		action.runExecutable(pipelineVariables, eventChannel)
 	case ValuesTransform:
-		return action.runValuesTransform(pipelineVariables)
+		action.runValuesTransform(pipelineVariables, eventChannel)
 	}
-
-	return nil
 }
 
 var yamlDocumentSplitPattern = regexp.MustCompile(`(?m)^---$`)
 var emptyYamlDocumentMatch = regexp.MustCompile(`(?s)^\s*$`)
 
-func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVariables, client *Client) []*PipelineActionOutcome {
+func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVariables, client *Client, eventChannel chan<- *ActionEvent) {
 	tmpl, err := template.New(filepath.Base(action.ActionFullyQualifiedPath)).Funcs(sprig.FuncMap()).Funcs(JobberTemplateFunctions()).ParseFiles(action.ActionFullyQualifiedPath)
 	if err != nil {
-		return []*PipelineActionOutcome{
-			{
-				Variables: pipelineVariables,
-				Error:     NewTemplateError(action.Descriptor, "failed to parse resource template at (%s): %s", action.ActionFullyQualifiedPath, err),
-			},
+		eventChannel <- &ActionEvent{
+			Type:  AnErrorOccurred,
+			Error: fmt.Errorf("failed to read resource template (%s): %s", action.ActionFullyQualifiedPath, err),
 		}
+		return
 	}
 
 	templateBuffer := new(bytes.Buffer)
 
 	if err = tmpl.Execute(templateBuffer, pipelineVariables); err != nil {
-		return []*PipelineActionOutcome{
-			{
-				Variables:    pipelineVariables,
-				Error:        NewTemplateError(action.Descriptor, "failed to expand resource template: %s", err),
-				OutputBuffer: templateBuffer,
-			},
+		eventChannel <- &ActionEvent{
+			Type:  AnErrorOccurred,
+			Error: fmt.Errorf("failed to expand resource template (%s): %s", action.ActionFullyQualifiedPath, err),
 		}
+		return
+	}
+
+	eventChannel <- &ActionEvent{
+		Type:                   TemplateExpanded,
+		ExpandedTemplateBuffer: templateBuffer,
 	}
 
 	yamlDocuments := yamlDocumentSplitPattern.Split(templateBuffer.String(), -1)
@@ -131,27 +153,26 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 		}
 	}
 
-	outcomes := make([]*PipelineActionOutcome, 0, len(yamlDocuments))
-
 	for _, yamlDocumentString := range yamlDocumentsThatAreNotEmpty {
-		outcome := &PipelineActionOutcome{
-			Variables:    pipelineVariables,
-			OutputBuffer: bytes.NewBufferString(yamlDocumentString),
-		}
-
 		decoder := yaml.NewDecoder(strings.NewReader(yamlDocumentString))
 		decodedYaml := make(map[string]any)
 
 		if err = decoder.Decode(decodedYaml); err != nil {
-			outcome.Error = NewTemplateError(action.Descriptor, "unable to decode expanded template as yaml: %s", err)
-			return append(outcomes, outcome)
+			eventChannel <- &ActionEvent{
+				Type:  AnErrorOccurred,
+				Error: fmt.Errorf("failed to decode yaml from template (%s): %s", action.ActionFullyQualifiedPath, err),
+			}
+			return
 		}
 
 		if len(decodedYaml) > 0 {
 			resource, err := NewGenericK8sResourceFromUnstructuredMap(decodedYaml, client)
 			if err != nil {
-				outcome.Error = NewTemplateError(action.Descriptor, "expanded template yaml is not valid resource definition: %s", err)
-				return append(outcomes, outcome)
+				eventChannel <- &ActionEvent{
+					Type:  AnErrorOccurred,
+					Error: fmt.Errorf("decoded yaml from template (%s) does not describe a Kubernetes resource: %s", action.ActionFullyQualifiedPath, err),
+				}
+				return
 			}
 
 			if resource.NamespaceName() == "" {
@@ -159,38 +180,57 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 			}
 
 			if err := resource.Create(); err != nil {
-				outcome.Error = NewResourceCreationError(action.Descriptor, resource.Information(), err.Error())
-				return append(outcomes, outcome)
+				eventChannel <- &ActionEvent{
+					Type:  AnErrorOccurred,
+					Error: fmt.Errorf("failed to create resource: %s", err),
+				}
+				return
 			}
 
-			switch resource.SimplifiedTypeString() {
-			case "Pod":
+			eventChannel <- &ActionEvent{
+				Type:             ResourceCreated,
+				AffectedResource: resource,
+			}
+
+			switch resource.GvkString() {
+			case "v1/Pod":
 				if err = resource.AsAPod().WaitForRunningState(60 * time.Second); err != nil {
 					if err == ErrorTimeExceeded {
 						err = fmt.Errorf("timed out waiting for Running state")
 					}
-					outcome.Error = NewResourceCreationError(action.Descriptor, resource.Information(), err.Error())
-					return append(outcomes, outcome)
+					eventChannel <- &ActionEvent{
+						Type:             AnErrorOccurred,
+						Error:            err,
+						AffectedResource: resource,
+					}
+					return
 				}
-			case "Job":
+
+				eventChannel <- &ActionEvent{
+					Type:             PodMovedToRunningState,
+					AffectedResource: resource,
+				}
+			case "batch/v1/Job":
 				if err = resource.AsAJob().WaitForCompletion(); err != nil {
-					outcome.Error = NewJobCompletionFailureError(resource.Information(), err.Error())
-					return append(outcomes, outcome)
+					eventChannel <- &ActionEvent{
+						Type:             AnErrorOccurred,
+						Error:            err,
+						AffectedResource: resource,
+					}
+					return
 				}
 			}
 
-			outcome.CreatedResource = resource
-
 			pipelineVariables.Runtime.Add(resource)
-
-			outcomes = append(outcomes, outcome)
 		}
 	}
 
-	return outcomes
+	eventChannel <- &ActionEvent{
+		Type: ActionCompletedSuccessfully,
+	}
 }
 
-func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables) []*PipelineActionOutcome {
+func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables, eventChannel chan<- *ActionEvent) {
 	cmdStdout := new(bytes.Buffer)
 	cmdStderr := new(bytes.Buffer)
 
@@ -198,22 +238,22 @@ func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables
 	cmd.Stdout = cmdStdout
 	cmd.Stderr = cmdStderr
 
-	outcome := &PipelineActionOutcome{
-		Variables:    pipelineVariables,
-		OutputBuffer: cmdStdout,
-		StderrBuffer: cmdStderr,
-	}
-
 	jsonBytes, err := json.Marshal(pipelineVariables)
 	if err != nil {
-		outcome.Error = fmt.Errorf("failed to marshall variables to json: %s", err)
-		return []*PipelineActionOutcome{outcome}
+		eventChannel <- &ActionEvent{
+			Type:  AnErrorOccurred,
+			Error: fmt.Errorf("failed to marshall variables to json: %s", err),
+		}
+		return
 	}
 
 	stdinWritePipe, err := cmd.StdinPipe()
 	if err != nil {
-		outcome.Error = fmt.Errorf("could not connect stdin pipe: %s", err)
-		return []*PipelineActionOutcome{outcome}
+		eventChannel <- &ActionEvent{
+			Type:  AnErrorOccurred,
+			Error: fmt.Errorf("could not connect stdin pipe: %s", err),
+		}
+		return
 	}
 
 	go func() {
@@ -222,14 +262,25 @@ func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables
 	}()
 
 	if err := cmd.Run(); err != nil {
-		outcome.Error = err
+		eventChannel <- &ActionEvent{
+			Type:  AnErrorOccurred,
+			Error: err,
+		}
+		return
 	}
 
-	return []*PipelineActionOutcome{outcome}
+	eventChannel <- &ActionEvent{
+		Type:         ExecutionSuccessful,
+		StdoutBuffer: cmdStdout,
+		StderrBuffer: cmdStderr,
+	}
+
+	eventChannel <- &ActionEvent{
+		Type: ActionCompletedSuccessfully,
+	}
 }
 
-func (action *PipelineAction) runValuesTransform(pipelineVariables *PipelineVariables) []*PipelineActionOutcome {
-	return nil
+func (action *PipelineAction) runValuesTransform(pipelineVariables *PipelineVariables, eventChannel chan<- *ActionEvent) {
 }
 
 func (outcome *PipelineActionOutcome) WriteOutputToFile(filePath string, fileModeIfFileIsCreated os.FileMode) error {

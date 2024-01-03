@@ -141,14 +141,12 @@ func (resource *GenericK8sResource) gkvLookupKey() gvkKey {
 	return gvkKey(fmt.Sprintf("%s\t%s\t%s", resource.Group, resource.Version, resource.Kind))
 }
 
-var gkvToSimplifiedType = map[gvkKey]string{
-	gvkKey("\tv1\tPod"):       "Pod",
-	gvkKey("batch\tv1\tJob"):  "Job",
-	gvkKey("\tv1\tNamespace"): "Namespace",
-}
+func (resource *GenericK8sResource) GvkString() string {
+	if resource.Group == "" {
+		return fmt.Sprintf("%s/%s", resource.Version, resource.Kind)
+	}
 
-func (resource *GenericK8sResource) SimplifiedTypeString() string {
-	return gkvToSimplifiedType[resource.gkvLookupKey()]
+	return fmt.Sprintf("%s/%s/%s", resource.Group, resource.Version, resource.Kind)
 }
 
 type TransitivePod struct {
