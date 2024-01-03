@@ -39,7 +39,7 @@ func ActionTypeToString(at ActionType) string {
 
 func descriptorStringToActionType(actionTypeAsAString string) (ActionType, error) {
 	switch actionTypeAsAString {
-	case "templates":
+	case "resources":
 		return TemplatedResource, nil
 	case "transforms":
 		return ValuesTransform, nil
@@ -50,7 +50,7 @@ func descriptorStringToActionType(actionTypeAsAString string) (ActionType, error
 	return InvalidActionType, fmt.Errorf("action (%s) does not translate to a known type", actionTypeAsAString)
 }
 
-var actionDescriptorElementsMatcher = regexp.MustCompile(`^/?([^/])+/(.+[^/])$`)
+var actionDescriptorElementsMatcher = regexp.MustCompile(`^/?([^/]+)/(.+[^/])$`)
 
 const (
 	actionDescriptorMatchGroupWholeMatch = 0

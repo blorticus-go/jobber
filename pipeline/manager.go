@@ -6,15 +6,23 @@ import (
 )
 
 type Manager struct {
-	functionMap template.FuncMap
+	functionMap                 template.FuncMap
+	actionFactory               *ActionFactory
+	pipelineActionDirectoryPath string
+	pipelineActionSet           []Action
 }
 
 type ActionIterator struct {
+	pipelineActionSetQueue []Action
+	pendingAction          Action
 }
 
-func NewManager() *Manager {
+func NewManager(pipelineActionDirectoryPath string, actionFactory *ActionFactory) *Manager {
 	return &Manager{
-		functionMap: make(template.FuncMap),
+		functionMap:                 make(template.FuncMap),
+		actionFactory:               actionFactory,
+		pipelineActionDirectoryPath: pipelineActionDirectoryPath,
+		pipelineActionSet:           []Action{},
 	}
 }
 
@@ -31,17 +39,36 @@ func (manager *Manager) AddTemplateExpansionFunctionSet(functionMap template.Fun
 }
 
 func (manager *Manager) PrepareActionsFromStringList(actions []string) error {
+	manager.pipelineActionSet = make([]Action, 0, len(actions))
+
+	for _, actionDescriptor := range actions {
+		action, err := manager.actionFactory.NewActionFromStringDescriptor(actionDescriptor, manager.pipelineActionDirectoryPath)
+		if err != nil {
+			return err
+		}
+
+		manager.pipelineActionSet = append(manager.pipelineActionSet, action)
+	}
+
 	return nil
 }
 
 func (manager *Manager) ActionIterator() *ActionIterator {
-	return nil
+	return &ActionIterator{
+		pipelineActionSetQueue: manager.pipelineActionSet,
+	}
 }
 
 func (iterator *ActionIterator) Next() bool {
+	if len(iterator.pipelineActionSetQueue) > 0 {
+		iterator.pendingAction = iterator.pipelineActionSetQueue[0]
+		iterator.pipelineActionSetQueue = iterator.pipelineActionSetQueue[1:]
+		return true
+	}
+
 	return false
 }
 
 func (iterator *ActionIterator) Value() Action {
-	return nil
+	return iterator.pendingAction
 }
