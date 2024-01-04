@@ -389,3 +389,28 @@ The reason `jobber` records expanded templates, and stdout/stderr from executabl
 ## Logging
 
 `jobber` prints a stream of events to stdout in human-readable format.  Among other things, every directory, file and resource that are created is logged, including paths and names.  Errors that terminate a Test are also logged.  This logging allows the user to locate the still-existing temp directory, any still-existing resources, and the error that caused termination.
+
+## Building Jobber
+
+To build the `jobber` application, you must be on a system with [golang](https://go.dev/doc/install) 1.21 or higher.  Do the following:
+
+### Clone the repository
+
+```bash
+git clone https://github.com/blorticus-go/jobber.git
+```
+
+### Build the application
+
+```bash
+cd jobber/applications/jobber
+go build -o /tmp/jobber .
+```
+
+The executable is now `/tmp/jobber`.  Naturally, you may deposit anywhere you choose.
+
+To run `jobber`, there must a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) file with appropriate kube-api access defined for the cluster you will target.  If the environmental variable `KUBECONFIG` is defined and points to a valid kubeconfig file, you don't need to do anything else.  Alternatively, you can point directly to a kubeconfig file using the `-kubeconfig` flag (followed by the path to a kubeconfig file).
+
+`jobber` requires a properly formatted test configuration file as described above, and this file must reference a properly arranged action definition root directory.  The default location for the config file is `./config.yaml`.  To specific a different config file (and you really should), pass the `-config` flag (followed by the path to the configuration file).
+
+`jobber` will log to stdout as described above.
