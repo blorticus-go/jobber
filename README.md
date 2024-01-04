@@ -409,6 +409,8 @@ go build -o /tmp/jobber .
 
 The executable is now `/tmp/jobber`.  Naturally, you may deposit anywhere you choose.
 
+## Running jobber
+
 To run `jobber`, there must a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) file with appropriate kube-api access defined for the cluster you will target.  If the environmental variable `KUBECONFIG` is defined and points to a valid kubeconfig file, you don't need to do anything else.  Alternatively, you can point directly to a kubeconfig file using the `-kubeconfig` flag (followed by the path to a kubeconfig file).
 
 `jobber` requires a properly formatted test configuration file as described above, and this file must reference a properly arranged action definition root directory.  The default location for the config file is `./config.yaml`.  To specific a different config file (and you really should), pass the `-config` flag (followed by the path to the configuration file).
