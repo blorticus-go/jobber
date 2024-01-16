@@ -32,7 +32,7 @@ func (runner *Runner) createDefaultNamespace(pipelineVariables *PipelineVariable
 	}
 
 	actionEventChannel := make(chan *ActionEvent)
-	go action.Run(pipelineVariables, runner.client, actionEventChannel)
+	go action.Run(pipelineVariables, &PipelineExecutionEnvironment{EnvironmentalVariables: runner.config.Test.Pipeline.ExecutionEnvironment}, runner.client, actionEventChannel)
 
 	var createdResource *GenericK8sResource
 
@@ -119,21 +119,21 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 			for action := testCasePipeline.Restart(); action != nil; action = testCasePipeline.NextAction() {
 				actionEventChannel := make(chan *ActionEvent)
 
-				go action.Run(templateExpansionVariables, runner.client, actionEventChannel)
+				go action.Run(templateExpansionVariables, &PipelineExecutionEnvironment{EnvironmentalVariables: runner.config.Test.Pipeline.ExecutionEnvironment}, runner.client, actionEventChannel)
 
 				if err := runner.handleActionEvents(action, actionEventChannel, eventHandler, assetsDirectoryManager, testUnit, testCase); err != nil {
 					return
 				}
 			}
 
-			for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
-				if attemptDetails.Error != nil {
-					eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
-					return
-				}
-
-				eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
-			}
+			// for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
+			// 	if attemptDetails.Error != nil {
+			// 		eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
+			// 		return
+			// 	}
+			//
+			// 	eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
+			// }
 
 			eventHandler.sayThatCaseCompletedSuccessfully(testUnit, testCase)
 		}
@@ -213,24 +213,6 @@ func writeExpandedTemplateForAction(action *PipelineAction, expandedTemplateBuff
 		writeReaderToFile(outputFilesBasePath, 0640, expandedTemplateBuffer)
 	}
 }
-
-// func writeActionOutcomeInformationToAssetsDirectory(action *PipelineAction, outcome *PipelineActionOutcome, testCaseAssetsDirectories *TestCaseDirectoryPaths) {
-// 	switch action.Type {
-// 	case TemplatedResource:
-// 		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ExpandedTemplates, action.ActionFullyQualifiedPath)
-// 		outcome.WriteOutputToFile(outputFilesBasePath, 0600)
-
-// 	case Executable:
-// 		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.Executables, action.ActionFullyQualifiedPath)
-// 		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
-// 		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
-
-// 	case ValuesTransform:
-// 		outputFilesBasePath := deriveActionOutputFilesBasePath(testCaseAssetsDirectories.ValuesTransforms, action.ActionFullyQualifiedPath)
-// 		outcome.WriteOutputToFile(fmt.Sprintf("%s.stdout", outputFilesBasePath), 0600)
-// 		outcome.WriteErrorToFile(fmt.Sprintf("%s.stderr", outputFilesBasePath), 0600)
-// 	}
-// }
 
 func deriveActionOutputFilesBasePath(depositDirectoryPath string, actionFullyQualifiedName string) string {
 	actionFullyQalifiedNamePathElements := strings.Split(actionFullyQualifiedName, "/")

@@ -15,7 +15,7 @@ func (v *ConfigVars) String() string {
 	return ""
 }
 
-var configVarMatcher = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_]*)=(.*)$`)
+var configVarMatcher = regexp.MustCompile(`^([a-zA-Z]([a-zA-Z0-9_\.]*[a-zA-Z0-9_])?)=(.*)$`)
 
 func (v *ConfigVars) Set(s string) error {
 	matched := configVarMatcher.FindStringSubmatch(s)
@@ -29,9 +29,9 @@ func (v *ConfigVars) Set(s string) error {
 }
 
 type CommandLineArguments struct {
-	ConfigurationFilePath string
-	KubeconfigPath        string
-	ConfigExpansionVars   map[string]string
+	ConfigurationFilePath           string
+	KubeconfigPath                  string
+	OverridenConfigurationVariables map[string]string
 }
 
 func ParseCommandLineArguments() *CommandLineArguments {
@@ -46,7 +46,7 @@ func ParseCommandLineArguments() *CommandLineArguments {
 	flag.Var(configVars, "set", "add a configuration expansion variable of form var=value; may be repeated")
 	flag.Parse()
 
-	clargs.ConfigExpansionVars = configVars.Vars
+	clargs.OverridenConfigurationVariables = configVars.Vars
 
 	return clargs
 }

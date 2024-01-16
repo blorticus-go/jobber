@@ -31,8 +31,9 @@ type ConfigurationAssetArchive struct {
 }
 
 type ConfigurationPipeline struct {
-	ActionDefinitionsRootDirectory string   `yaml:"ActionDefinitionsRootDirectory"`
-	ActionsInOrder                 []string `yaml:"ActionsInOrder"`
+	ActionDefinitionsRootDirectory string            `yaml:"ActionDefinitionsRootDirectory"`
+	ActionsInOrder                 []string          `yaml:"ActionsInOrder"`
+	ExecutionEnvironment           map[string]string `yaml:"ExecutionEnvironment"`
 }
 
 type ConfigurationTest struct {

@@ -39,6 +39,24 @@ type PipelineActionOutcome struct {
 	Error           error
 }
 
+type PipelineExecutionEnvironment struct {
+	EnvironmentalVariables map[string]string
+	flattedString          []string
+}
+
+func (e *PipelineExecutionEnvironment) ToFlattenedStrings() []string {
+	if len(e.flattedString) == 0 && len(e.EnvironmentalVariables) > 0 {
+		s := make([]string, 0, len(e.EnvironmentalVariables))
+		for k, v := range e.EnvironmentalVariables {
+			s = append(s, fmt.Sprintf("%s=%s", k, v))
+		}
+
+		e.flattedString = s
+	}
+
+	return e.flattedString
+}
+
 func PipelineActionFromStringDescriptor(descriptor string, pipelineActionBasePath string) (*PipelineAction, error) {
 	if descriptor == "" {
 		return nil, fmt.Errorf("a pipeline action cannot be the empty string")
@@ -105,12 +123,12 @@ type ActionEvent struct {
 	AffectedResource       *GenericK8sResource
 }
 
-func (action *PipelineAction) Run(pipelineVariables *PipelineVariables, client *Client, eventChannel chan<- *ActionEvent) {
+func (action *PipelineAction) Run(pipelineVariables *PipelineVariables, executionEnvironment *PipelineExecutionEnvironment, client *Client, eventChannel chan<- *ActionEvent) {
 	switch action.Type {
 	case TemplatedResource:
 		action.runTemplatedResource(pipelineVariables, client, eventChannel)
 	case Executable:
-		action.runExecutable(pipelineVariables, eventChannel)
+		action.runExecutable(pipelineVariables, executionEnvironment, eventChannel)
 	case ValuesTransform:
 		action.runValuesTransform(pipelineVariables, eventChannel)
 	}
@@ -230,13 +248,15 @@ func (action *PipelineAction) runTemplatedResource(pipelineVariables *PipelineVa
 	}
 }
 
-func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables, eventChannel chan<- *ActionEvent) {
+func (action *PipelineAction) runExecutable(pipelineVariables *PipelineVariables, executionEnvironment *PipelineExecutionEnvironment, eventChannel chan<- *ActionEvent) {
 	cmdStdout := new(bytes.Buffer)
 	cmdStderr := new(bytes.Buffer)
 
 	cmd := exec.Command(action.ActionFullyQualifiedPath)
 	cmd.Stdout = cmdStdout
 	cmd.Stderr = cmdStderr
+
+	cmd.Env = executionEnvironment.ToFlattenedStrings()
 
 	jsonBytes, err := json.Marshal(pipelineVariables)
 	if err != nil {

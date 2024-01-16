@@ -71,6 +71,9 @@ Test:
       StorageRequest: 3Gi
   Pipeline:
     ActionDefinitionsRootDirectory: /opt/performance-testing/pipeline-actions-root
+    ExecutionEnvironment:
+      PATH: "/opt/openshift/aspen/client:/usr/bin:/bin"
+      KUBECONFIG: /opt/openshift/aspen/client/auth/kubeconfig
     ActionsInOrder:
       - resources/istio-cni.yaml
       - resources/nginx-producer.yaml
@@ -149,9 +152,9 @@ The rest of the Action path provides an Action Target.  The directory specified 
 
 The `resources` Targets may be Jobber templates.  As noted above, when the (possible) template is expanded (that is, the double-curly substitutions are resolved), the result must be well-formed YAML.  The YAML must also be a well-formed Kubernetes resource definition.  If template expansion fails or the creation of the resource fails, the Test stops.  If template expansion is successful, `jobber` captures and records the expanded template string.  If a resource is created `jobber` keeps track of it.  When a Test Case completes, any Kubernetes resource that `jobber` created is deleted, one-by-one, in reverse order of creation.  For example, if a Test Case creates a Namespace, a Pod, a Job (called Job1) and another Job (called Job2) in that order, upon successful Pipeline completion for a Test Case, `jobber` will delete Job2 then Job1 then Pod then Namespace.  Failure to delete a resource will also terminate the Test.
 
-The `executables` Targets are arbitrary executables.  As discussed variously above, the executable is fed values and context as a json blob to stdin.  If the executable exits with any non-zero value, the Test stops.  `jobber` records anything output to the executables stdout and stderr.
+The `executables` Targets are arbitrary executables.  As discussed variously above, the executable is fed values and context as a json blob to stdin.  If the executable exits with any non-zero value, the Test stops.  `jobber` records anything output to the executables stdout and stderr.  The environment for the executable is restricted to exactly the set of environmental variables in `Test.Pipeline.ExecutationEnvironment`.
 
-The `values-transforms` Targets are also arbitrary executables and also receive values and context as a json blob to stdin.  The executable is expected to emit the complete values and context set to stdout (with any intended modifications) as a json text blob.  This will completely replace the values and context for all remaining Actions in the current Test Case Pipeline.  If the executable exits with any non-zero value, the Test stops.  `jobber` records anything output to stdout (which, again, should be the modified values/context) and stderr.
+The `values-transforms` Targets are also arbitrary executables and also receive values and context as a json blob to stdin.  The executable is expected to emit the complete values and context set to stdout (with any intended modifications) as a json text blob.  This will completely replace the values and context for all remaining Actions in the current Test Case Pipeline.  If the executable exits with any non-zero value, the Test stops.  `jobber` records anything output to stdout (which, again, should be the modified values/context) and stderr.  The environment for the executable is restricted to exactly the set of environmental variables in `Test.Pipeline.ExecutationEnvironment`.
 
 During the execution of a Test, `jobber` creates a temporary directory (in the system temporary directory, usually `/tmp`).  Under this directory, it creates a directory with the same name as each Test Unit.  Under each of these Test Unit directories, it creates a directory with the same name as each Test Case.  Under each of these Test Case directories, it creates a directory for each Action Target type (i.e., `resources/`, `executables/` and `values-transforms/`).  Under these directories, it places the assets that are recorded from each Action taken.  Finally, each Test Case directory contains a directory called `retrieved-assets`.  `jobber` places nothing there, but provides the path to it as part of the context for each Pipeline Action.  As we will see, this temp directory is converted to a tarball, so this `retrieved-assets` directory is a sensible place for `executables` Targets to place any assets retrieved for a Test Case.
 
