@@ -126,14 +126,14 @@ func (runner *Runner) RunTest(eventChannel chan<- *Event) {
 				}
 			}
 
-			// for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
-			// 	if attemptDetails.Error != nil {
-			// 		eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
-			// 		return
-			// 	}
-			//
-			// 	eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
-			// }
+			for _, attemptDetails := range runner.resourceTracker.AttemptToDeleteAllAsYetUndeletedResources() {
+				if attemptDetails.Error != nil {
+					eventHandler.sayThatResourceDeletionFailed(attemptDetails.Resource.information, attemptDetails.Error, testUnit, testCase)
+					return
+				}
+
+				eventHandler.sayThatResourceDeletionSucceeded(attemptDetails.Resource.information, testUnit, testCase)
+			}
 
 			eventHandler.sayThatCaseCompletedSuccessfully(testUnit, testCase)
 		}

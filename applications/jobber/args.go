@@ -15,7 +15,7 @@ func (v *ConfigVars) String() string {
 	return ""
 }
 
-var configVarMatcher = regexp.MustCompile(`^([a-zA-Z]([a-zA-Z0-9_\.]*[a-zA-Z0-9_])?)=(.*)$`)
+var configVarMatcher = regexp.MustCompile(`^([a-zA-Z](?:[a-zA-Z0-9_\.]*[a-zA-Z0-9_])?)=(.*)$`)
 
 func (v *ConfigVars) Set(s string) error {
 	matched := configVarMatcher.FindStringSubmatch(s)
