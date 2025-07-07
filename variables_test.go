@@ -28,7 +28,7 @@ func TestVariables(t *testing.T) {
 			},
 		},
 	}); diff != nil {
-		t.Errorf(strings.Join(diff, "\t"))
+		t.Error(strings.Join(diff, "\t"))
 	}
 
 	variables.WithGlobalValues(map[string]any{
@@ -60,7 +60,7 @@ func TestVariables(t *testing.T) {
 			},
 		},
 	}); diff != nil {
-		t.Errorf(strings.Join(diff, "\t"))
+		t.Error(strings.Join(diff, "\t"))
 	}
 
 	variables = variables.RescopedToUnitNamed("unit01").WithUnitValues(map[string]any{
@@ -103,7 +103,7 @@ func TestVariables(t *testing.T) {
 			},
 		},
 	}); diff != nil {
-		t.Errorf(strings.Join(diff, "\t"))
+		t.Error(strings.Join(diff, "\t"))
 	}
 
 	variables = variables.RescopedToCaseNamed("case01").WithCaseValues(map[string]any{
@@ -144,7 +144,7 @@ func TestVariables(t *testing.T) {
 			},
 		},
 	}); diff != nil {
-		t.Errorf(strings.Join(diff, "\t"))
+		t.Error(strings.Join(diff, "\t"))
 	}
 
 }

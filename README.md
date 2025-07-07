@@ -12,9 +12,9 @@ The reason for using Jobs to accomplish each step is that the Job functions (e.g
 
 When a test completes, if everything is successful, it makes sense to delete the created Kubernetes resources automatically.
 
-One's first impulse may be to use [Helm](https://helm.sh).  Helm, however, is patterned around deploying configurable packages of resources that are related and non-transient.  Jobs, by their nature, are transient.  They start, run (via one or more Pods), then exit when the associated unit fo work is done.  Helm can be coerced into handling Jobs, but doing so is unwieldy and difficult to both maintain and debug.
+One's first impulse may be to use [Helm](https://helm.sh).  Helm, however, is patterned around deploying configurable packages of resources that are related and non-transient.  Jobs, by their nature, are transient.  They start, run (via one or more Pods), then exit when the associated unit of work is done.  Helm can be coerced into handling Jobs, but doing so is unwieldy and difficult to both maintain and debug.
 
-Naturally, there are many powerful pipeline tools available.  At the most basic, this sort of pipeline could be run using [Ansible](https://www.ansible.com) or even Bash.  The problem with a system like Ansible is that the output cannot be completely controlled.  If a performance test requires multiple discreet, repeated sub-tests, with a set of variables changing between each sub-test (see the section on Test Cases and Test Units below), there may be many steps in the test.  If one step fails, it is desirable to keep the Kubernetes resources created for the sub-test case to remain.  This makes troubleshooting much easier.  But it must also be manually cleaned up.  Ansible output makes it difficult to understand what has been created and when a failure happens, what went wrong.  There are ways to coerce it into writing this information to a human-readable file, for example, but this is unnatural for Ansible and would be unwieldy to implement, to test, and to debug.
+Naturally, there are many powerful pipeline tools available.  At the most basic, this sort of pipeline could be run using [Ansible](https://www.ansible.com) or even Bash.  The problem with a system like Ansible is that the output cannot be completely controlled.  If a performance test requires multiple discrete, repeated sub-tests, with a set of variables changing between each sub-test (see the section on Test Cases and Test Units below), there may be many steps in the test.  If one step fails, it is desirable to keep the Kubernetes resources created for the sub-test case to remain.  This makes troubleshooting much easier.  But it must also be manually cleaned up.  Ansible output makes it difficult to understand what has been created and when a failure happens, what has gone wrong.  There are ways to coerce it into writing this information to a human-readable file, for example, but this is unnatural for Ansible and would be unwieldy to implement, to test, and to debug.
 
 Moreover, this type of Job-driven pipeline performance testing can be patterned for many different testing scenarios.  Using Ansible generally means each scenario would be a playbook, likely with lots of repeated code across different testing scenarios.  This could be modularized, but at that point, Ansible isn't providing much help.
 
@@ -22,13 +22,13 @@ Finally, neither Ansible nor shell scripting lend themselves well to readability
 
 The panoply of sophisticated pipeline tools, on the other hand, are extensible specifically for this type of work.  Unfortunately, their flexibility -- and concomitant complexity -- is the problem.  Performance testing for this Job-driven pattern really only needs to support a few types of actions.  These can all be modeled in those pipeline frameworks, but so much scaffolding is necessary that the shape of this pattern gets easily lost.  And when one wishes to extend the resulting system for a specific feature, a developer must spend considerable effort to understand the complex framework to make what might otherwise be simple feature additions.
 
-This leads to an application written specifically to support this Job-driven pattern.  It is opinionated, and thus considerably less flexible that other generic pipeline frameworks, but the tradeoff is, it is much simpler to understand and extend.
+This leads to an application written specifically to support this Job-driven pattern.  It is opinionated, and thus considerably less flexible than other generic pipeline frameworks, but the tradeoff is, it is much simpler to understand and extend.
 
 ## The Testing Pattern
 
 `jobber` divides performance testing into Test Units and Test Cases.  A Test Case is single, self-contained performance test with a fixed set of parameters.  For example, a Test Case might use JMeter in a Pod with an Istio-injected Envoy sidecar.  The Test Case may run a specific JMeter scenario for 10 minutes using two worker threads in Envoy, eight concurrent client connections, at a fixed rate of 100 HTTP/1.1 transactions per second (TPS).  A different Test Case for a Test might use Jmeter (with an Envoy sidecar) to run the same specific JMeter scenario for 10 minutes using four worker threads, sixteen client connections and a fixed rate of 1000 TPS.  Notice these two Test Cases use a common scenario, varying the TPS rate.  The worker threads and client connections are also varied, as perhaps is necessary to achieve the higher TPS rate.
 
-For a Test Case, one might create a Kubernetes Namespace, start an NGINX Pod in that Namespace, created a shared PersistentVolumeClaim, run the JMeter Job for 10 minutes, run the JTL processor Job, run the prometheus collection Job, then extract all of this data into a local tar archive.  Each of these ("create Namespace", "create NGINX Pod", etc.) are steps of a common Pipeline.  All Test Cases share a common Pipeline (i.e., a common set of steps to complete the Test Case).  Pipeline steps are called Actions.
+For a Test Case, one might create a Kubernetes Namespace, start an NGINX Pod in that Namespace, create a shared PersistentVolumeClaim, run the JMeter Job for 10 minutes, run the JTL processor Job, run the prometheus collection Job, then extract all of this data into a local tar archive.  Each of these ("create Namespace", "create NGINX Pod", etc.) are steps of a common Pipeline.  All Test Cases share a common Pipeline (i.e., a common set of steps to complete the Test Case).  Pipeline steps are called Actions.
 
 A Test Unit is a set of Test Cases for which a different set of variables is altered.  For example, one might want to run the two Test Cases previously described, but in one case, Envoy telemetry is employed, while in the other case, it is not.  This allows one to test the effect of enabling telemetry on CPU, memory and latency at various TPS levels.  To do this, one would create the two Test Cases above (which in turn, each use a common Pipeline with a common set of Pipeline Actions).  Then, one would create two Test Units, altering one variable ("use telemetry" or "do not use telemetry").  Notice that each Test Unit that is part of a Test execute the same set of Test Cases in the same order, but the variables set for the Test Unit may affect the nature of the Pipeline steps.  For example setting "do not use telemetry" may cause the creation of Telemetry resource, whereas, "use telemetry" does not (assuming here that the use of telemetry is the Istio default).
 
@@ -194,7 +194,7 @@ If there is a file called `default-namespace.yaml` under `resources` in the acti
 }
 ```
 
-For example, given the example configuration above, when the first Test Case of the first Test Unit runs, assume that the temp directory is `/tmp/jobber.55555`.  The json blob would look like this:
+For example, given the example configuration above, when the first Test Case of the first Test Unit runs, assume that the temp directory is `/tmp/jobber.xxxxx` (where `xxxxx` is a generated value).  The json blob would look like this:
 
 ```json
 {
@@ -385,6 +385,20 @@ If the Test completes successfully (that is, if each Pipeline Action of each Tes
 
 Once the archive is created, the temp directory is deleted.
 
+## Command-line Overrides
+
+When running `jobber`, the values in the jobber config yaml can be overridden from the command-line using the `set` switch.  An override uses a dot-separated notation.  For example:
+
+```bash
+jobber -config jobber-config.yaml \
+  -set .Test.AssetArchive.FilePath=/tmp/assetarchive.tar.gz \
+  -set .Test.GlobalValues.ImageVersions.cgam_perf_test_nginx=v1.0.0 \
+  -set .Test.Pipeline.ActionsInOrder.[0]=resources/modified-istio-cni.yaml \
+  -set .Test.Pipeline.Cases.[1000TPS].Values.Sidecar.WorkerThreads=6
+```
+
+The leading dot on `.Test` is optional.  In most cases, new key/value pairs cannot be added.  However, for `.Test.Pipeline.ActionsInOrder` if the provided index is equal to the list length, that action will be added to the pipeline at the end.  This can be done multiple times (with the index increasing by one each time).  An action cannot be removed from the pipeline using this mechanism, however.
+
 ## Troubleshooting a Pipeline
 
 The reason `jobber` records expanded templates, and stdout/stderr from executables is to facilitate Pipeline Action debugging.  Usually, a failure of Pipeline Action occurs because of a bug in the Action definition (e.g., a resource template that contains a non-existant `Values` reference or which yields YAML that is not correct for a resource type).  When an Action fails, the Test stops.  At this point, the creator of the Pipeline can look at the still-existing temp directory contents to help determine what happened.  It is a good idea to remove the temp directory manually when troubleshooting is done.  If a Test terminates on an error, any resources already created for the last running Test Case will still exist.  These, too, should be manually deleted.
@@ -402,8 +416,23 @@ To build the `jobber` application, you must be on a system with [golang](https:/
 ```bash
 git clone https://github.com/blorticus-go/jobber.git
 ```
+### Build the application using a container build environment
 
-### Build the application
+You can build the `jobber` application using a transient Docker container.  You must be in the root of repository (i.e., the directory created when you performed a `git clone`), so after performing the `git clone`:
+
+```bash
+cd jobber
+export BINARY_DIRECTORY=/tmp/bin
+docker buildx build --target export --output type=local,dest=${BINARY_DIRECTORY} -f docker/Dockerfile .
+```
+
+If successful, this will deposit the binary `jobber` in the `$BINARY_DIRECTORY`.  By default, it will build an amd64 binary for linux.  To change this, set the injected environmental variable `$GOOS` (for the target platform) and/or `$GOARCH` (for the target architecture).  For example:
+
+```bash
+docker buildx build --build-arg GOARCH=arm64 --target export --output type=local,dest=${BINARY_DIRECTORY} -f docker/Dockerfile .
+```
+
+### (Alternative) Build the application directly
 
 ```bash
 cd jobber/applications/jobber
@@ -412,10 +441,14 @@ go build -o /tmp/jobber .
 
 The executable is now `/tmp/jobber`.  Naturally, you may deposit anywhere you choose.
 
+### (Alternative) Build the application using a container build environment
+
+You can build the `jobber` application using a transient Docker container.
+
 ## Running jobber
 
 To run `jobber`, there must a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) file with appropriate kube-api access defined for the cluster you will target.  If the environmental variable `KUBECONFIG` is defined and points to a valid kubeconfig file, you don't need to do anything else.  Alternatively, you can point directly to a kubeconfig file using the `-kubeconfig` flag (followed by the path to a kubeconfig file).
 
-`jobber` requires a properly formatted test configuration file as described above, and this file must reference a properly arranged action definition root directory.  The default location for the config file is `./config.yaml`.  To specific a different config file (and you really should), pass the `-config` flag (followed by the path to the configuration file).
+`jobber` requires a properly formatted test configuration file as described above, and this file must reference a properly arranged action definition root directory.  The default location for the config file is `./config.yaml`.  To specify a different config file (and you really should), pass the `-config` flag (followed by the path to the configuration file).
 
 `jobber` will log to stdout as described above.

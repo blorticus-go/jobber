@@ -213,7 +213,7 @@ func (h *eventHandler) sayThatResourceTemplateExpansionFailed(templateName strin
 
 func (h *eventHandler) explainAttemptToCreateDefaultNamespace(createdNamespaceApiObject *corev1.Namespace, context EventContext, errorOnCreationAttempt error) {
 	var namespaceName string
-	if createdNamespaceApiObject != nil {
+	if createdNamespaceApiObject.Name != "" {
 		namespaceName = createdNamespaceApiObject.Name
 	} else {
 		namespaceName = fmt.Sprintf("%s-<generated>", createdNamespaceApiObject.GenerateName)

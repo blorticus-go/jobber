@@ -15,8 +15,11 @@ func main() {
 	client, err := jobber.NewClientUsingKubeconfigFile(kubeconfigFilePath)
 	logger.DieIfError(err, "failed to process kubeconfig")
 
-	config, err := jobber.ReadConfigurationYamlFromFile(clargs.ConfigurationFilePath, clargs.OverridenConfigurationVariables)
+	config, err := jobber.ReadConfigurationYamlFromFile(clargs.ConfigurationFilePath)
 	logger.DieIfError(err)
+
+	err = config.MergeOverrideValues(clargs.OverridenConfigurationVariables)
+	logger.DieIfError(err, "failed to merge override values into configuration: %s", err)
 
 	logger.SetContextFieldWidth(config.CharactersInLongestUnitName(), config.CharactersInLongestCaseName())
 

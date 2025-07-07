@@ -8,7 +8,7 @@ import (
 )
 
 type ConfigVars struct {
-	Vars map[string]string
+	Vars map[string]any
 }
 
 func (v *ConfigVars) String() string {
@@ -31,14 +31,14 @@ func (v *ConfigVars) Set(s string) error {
 type CommandLineArguments struct {
 	ConfigurationFilePath           string
 	KubeconfigPath                  string
-	OverridenConfigurationVariables map[string]string
+	OverridenConfigurationVariables map[string]any
 }
 
 func ParseCommandLineArguments() *CommandLineArguments {
 	clargs := &CommandLineArguments{}
 
 	configVars := &ConfigVars{
-		Vars: make(map[string]string),
+		Vars: make(map[string]any),
 	}
 
 	flag.StringVar(&clargs.ConfigurationFilePath, "config", "./config.yaml", "YAML configuration file path")
