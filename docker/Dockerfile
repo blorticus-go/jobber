@@ -15,7 +15,7 @@ COPY . .
 ARG GOOS=linux
 ARG GOARCH=amd64
 
-WORKDIR /opt/build/applications/jobber
+WORKDIR /opt/build/cmd/jobber
 RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -o /opt/dist/jobber .
 
 FROM scratch AS export

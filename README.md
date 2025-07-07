@@ -435,7 +435,7 @@ docker buildx build --build-arg GOARCH=arm64 --target export --output type=local
 ### (Alternative) Build the application directly
 
 ```bash
-cd jobber/applications/jobber
+cd jobber/cmd/jobber
 go build -o /tmp/jobber .
 ```
 

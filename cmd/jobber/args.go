@@ -15,12 +15,12 @@ func (v *ConfigVars) String() string {
 	return ""
 }
 
-var configVarMatcher = regexp.MustCompile(`^([a-zA-Z](?:[a-zA-Z0-9_\.]*[a-zA-Z0-9_])?)=(.*)$`)
+var configVarMatcher = regexp.MustCompile(`^(\S+)=(.*)$`)
 
 func (v *ConfigVars) Set(s string) error {
 	matched := configVarMatcher.FindStringSubmatch(s)
 	if len(matched) == 0 {
-		return fmt.Errorf("must be var=value")
+		return fmt.Errorf("must be varpath=value")
 	}
 
 	v.Vars[matched[1]] = matched[2]
@@ -43,7 +43,7 @@ func ParseCommandLineArguments() *CommandLineArguments {
 
 	flag.StringVar(&clargs.ConfigurationFilePath, "config", "./config.yaml", "YAML configuration file path")
 	flag.StringVar(&clargs.KubeconfigPath, "kubeconfig", "", "kubeconfig file path, if using")
-	flag.Var(configVars, "set", "add a configuration expansion variable of form var=value; may be repeated")
+	flag.Var(configVars, "set", "add a configuration expansion variable of form varpath=value; may be repeated")
 	flag.Parse()
 
 	clargs.OverridenConfigurationVariables = configVars.Vars
