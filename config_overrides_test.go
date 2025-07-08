@@ -103,7 +103,7 @@ func TestConfigurationMergeOverrideValues(t *testing.T) {
 		".Test.DefaultNamespace.Basename":                        "test-asm-perftest-",
 		"Test.GlobalValues.ImageVersions.cgam_perf_test_nginx":   "0.9.1",
 		"Test.GlobalValues.ImageVersions.jmeter_http2":           "v1.0.0",
-		"Test.GlobalValues.TestCaseDurationInSeconds":            1200,
+		"Test.GlobalValues.TestCaseDurationInSeconds":            "1200",
 		".Test.GlobalValues.PipelinePvc.StorageRequest":          "5Gi",
 		"Test.Pipeline.ActionDefinitionsRootDirectory":           "/var/tmp/foo",
 		"Test.Pipeline.ExecutionEnvironment.PATH":                "/var/tmp/bar",

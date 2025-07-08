@@ -1,6 +1,6 @@
 package jobber
 
-// ExampleConfiguration returns a Configuration struct that represents the example 
+// ExampleConfiguration returns a Configuration struct that represents the example
 // YAML configuration from the README.md file
 func ExampleConfiguration() *Configuration {
 	return &Configuration{
@@ -13,11 +13,11 @@ func ExampleConfiguration() *Configuration {
 			},
 			GlobalValues: map[string]any{
 				"ImageVersions": map[string]any{
-					"cgam_perf_test_nginx":   "0.9.0",
-					"file_extractor":         "0.1.0",
-					"jmeter_http2":           "0.8.0",
-					"jtl_processor":          "0.5.0",
-					"prometheus_collector":   "0.5.2",
+					"cgam_perf_test_nginx": "0.9.0",
+					"file_extractor":       "0.1.0",
+					"jmeter_http2":         "0.8.0",
+					"jtl_processor":        "0.5.0",
+					"prometheus_collector": "0.5.2",
 				},
 				"TestCaseDurationInSeconds": 600,
 				"PipelinePvc": map[string]any{

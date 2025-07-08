@@ -397,12 +397,50 @@ func setConfigurationKeyValueInMultiLevelMap(m map[string]any, keyStack []string
 	}
 
 	if reflect.ValueOf(m[keyStack[0]]).Kind() != reflect.ValueOf(value).Kind() {
-		return fmt.Errorf("configuration key (%s) must match declared type (%T)", originalKey, m[keyStack[0]])
+		coercedValue, err := attemptCoersionToYamlMarshallType(m[keyStack[0]], value)
+		if err != nil {
+			return fmt.Errorf("failed to coerce value for (%s): %w", originalKey, err)
+		}
+		m[keyStack[0]] = coercedValue
+	} else {
+		m[keyStack[0]] = value
 	}
 
-	m[keyStack[0]] = value
-
 	return nil
+}
+
+func attemptCoersionToYamlMarshallType(existingValue, newValue any) (any, error) {
+	switch existingValue.(type) {
+	case string:
+		return fmt.Sprintf("%v", newValue), nil
+
+	case int:
+		switch n := newValue.(type) {
+		case string:
+			convertedValue, err := strconv.Atoi(n)
+			if err != nil {
+				return newValue, fmt.Errorf("failed to convert string (%s) to int: %w", newValue, err)
+			}
+
+			return convertedValue, nil
+
+		case uint:
+			return int(n), nil
+		}
+
+	case bool:
+		switch n := newValue.(type) {
+		case string:
+			convertedValue, err := strconv.ParseBool(n)
+			if err != nil {
+				return newValue, fmt.Errorf("failed to convert string (%s) to bool: %w", newValue, err)
+			}
+
+			return convertedValue, nil
+		}
+	}
+
+	return newValue, fmt.Errorf("cannot coerce value (%v) of type %T to type %T", newValue, newValue, existingValue)
 }
 
 func ReadConfigurationYamlFromFile(filePath string) (*Configuration, error) {
